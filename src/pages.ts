@@ -4,7 +4,9 @@ export function pairingPage(accent: Accent = 'orange'): string {
   return `<!doctype html><html lang="zh-CN" data-rc-accent="${accent}"><head><meta charset="utf-8"><link rel="icon" href="data:,"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="referrer" content="no-referrer"><title>连接 DeepSeek Harness</title><style>${css}${accentCSS(':root', 'media')}</style></head><body><main class="card"><span class="eyebrow">DSH · 远程</span><h1>连接你的电脑</h1><p>在电脑上确认这次配对后，你就可以在这里继续使用 DeepSeek Harness。</p><div class="status"><span class="dot"></span><span id="state">正在发送配对请求…</span></div><small>授权后，这台设备与本机拥有相同的操作权限。你可以随时在远程控制面板撤销设备。</small><button id="enter" hidden>进入 DeepSeek Harness</button></main><script>
   (async()=>{const state=document.getElementById('state');const enter=document.getElementById('enter');
   try{const token=new URLSearchParams(location.hash.slice(1)).get('pair');history.replaceState(null,'','/pair');
-    if(!token){const health=await fetch('/api/dsh-remote-control/manage',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'status'})});if(health.ok){location.replace('/');return}throw Error('请在电脑上开启远程控制并扫描新的二维码。')}
+    const health=await fetch('/api/dsh-remote-control/manage',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'requests'})}).catch(()=>null);
+    if(health&&health.ok){state.textContent='这台设备已经配对过，正在打开…';location.replace('/');return}
+    if(!token)throw Error('请在电脑上开启远程控制并扫描新的二维码。');
     let model='';try{const hints=await navigator.userAgentData?.getHighEntropyValues(['model']);model=hints?.model||''}catch{}
     const request=await fetch('/rc/pair/request',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({token,model})});const claim=await request.json();if(!request.ok)throw Error(claim.error||'配对请求失败');
     state.textContent='等待电脑确认，请查看本机远程控制面板';

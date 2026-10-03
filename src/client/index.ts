@@ -4,7 +4,7 @@ import { ACCENTS, ACCENT_IDS, type Accent } from '../accent.js'
 const h = React.createElement
 const ROUTE = '/api/dsh-remote-control/manage'
 interface Status {
-  enabled: boolean; busy: boolean; mode: 'public' | 'lan' | 'fixed'; activeMode?: 'public' | 'lan' | 'fixed'; autoStart: boolean; proxyConfigured: boolean; accent?: Accent; route?: string; activeRoute?: string; routeNote?: string
+  enabled: boolean; busy: boolean; mode: 'public' | 'lan' | 'fixed'; activeMode?: 'public' | 'lan' | 'fixed'; autoStart: boolean; proxyConfigured: boolean; proxyMode?: 'system' | 'manual' | 'off'; manualProxy?: string; systemProxy?: { url: string; source: string } | null; accent?: Accent; route?: string; activeRoute?: string; routeNote?: string
   phase: string; error?: string; warning?: string; gatewayPort: number; local: boolean; expiresAt?: number; qr?: string
   links: Array<{ base: string; url?: string }>; requests: Array<{ id: string; name: string; expiresAt: number }>
   devices: Array<{ id: string; name: string; createdAt: number; lastSeenAt: number; online: boolean; via?: 'lan' | 'public' }>; fixedReason: string; lanHint: string
@@ -84,6 +84,7 @@ export function RemoteControlPanel(): React.ReactElement {
     catch { setNotice('浏览器不允许自动复制，请选中下面的链接手动复制。') }
   }
   const expired = !!state?.expiresAt && Date.now() >= state.expiresAt
+  const proxyMode = state?.proxyMode ?? 'system'
   // The code is a one-time ticket for pairing a new device, valid for five minutes; devices already
   // paired do not depend on it. While the panel is open it is renewed, unless a device is mid-pairing.
   const renewing = React.useRef(false)
@@ -131,13 +132,22 @@ export function RemoteControlPanel(): React.ReactElement {
             h('button', { key: id, type: 'button', 'aria-pressed': (state?.route ?? 'cloudflare') === id, disabled, onClick: () => { void act('preferences', { route: id }) } }, name))),
         state?.activeRoute ? `　正在使用 ${state.activeRoute}` : '') : null,
       shown !== 'lan' ? h('p', { className: 'dsrc-note' }, state?.routeNote ?? 'Cloudflare 开不起来时可以换 localhost.run：它用电脑自带的 ssh，不用下载任何东西，但速度慢得多，手机第一次打开可能要等几分钟，地址每隔几小时还会换一次。改线路在下次开启时生效。') : null,
-      shown !== 'lan' ? h('details', { className: 'dsrc-proxy' }, h('summary', null, state?.proxyConfigured ? '电脑的网络代理 · 已设置' : '开启失败？给电脑设置网络代理（可选）'), h('div', { className: 'dsrc-input' }, h('input', { 'aria-label': '电脑端代理地址', placeholder: 'http://127.0.0.1:7890', value: proxy, onChange: (event: React.ChangeEvent<HTMLInputElement>) => setProxy(event.target.value) }), button('保存代理', 'preferences', { proxy })), h('p', { className: 'dsrc-note' }, '“任意网络”需要这台电脑能访问 Cloudflare。电脑平时靠代理软件上网的话，把代理地址填在这里；留空则使用系统已有的设置。保存后重新开启生效。手机不需要代理。首次开启会下载 Cloudflare 的连接组件。')) : null,
+      shown !== 'lan' ? h('details', { className: 'dsrc-proxy' },
+        h('summary', null, `电脑访问外网的代理 · ${proxyMode === 'system' ? (state?.systemProxy ? '自动检测到系统代理' : '自动检测（当前没有）') : proxyMode === 'manual' ? '手动填写' : '不使用'}`),
+        h('div', { className: 'dsrc-mode dsrc-routes', role: 'group', 'aria-label': '代理方式', style: { margin: '10px 0 0' } },
+          ...([['system', '自动检测系统代理'], ['manual', '手动填写'], ['off', '不使用']] as const).map(([id, name]) =>
+            h('button', { key: id, type: 'button', 'aria-pressed': proxyMode === id, disabled, onClick: () => { void act('preferences', { proxyMode: id }) } }, name))),
+        proxyMode === 'system' ? h('p', { className: 'dsrc-note' }, state?.systemProxy ? `检测到 ${state.systemProxy.url}（${state.systemProxy.source}），开启时会用它。` : '没有检测到系统代理，开启时直接连接。开了代理软件却没检测到的话，请在代理软件里打开“系统代理”，或改用手动填写。') : null,
+        proxyMode === 'manual' ? h('div', { className: 'dsrc-input' }, h('input', { 'aria-label': '电脑端代理地址', placeholder: state?.manualProxy || 'http://127.0.0.1:7890', value: proxy, onChange: (event: React.ChangeEvent<HTMLInputElement>) => setProxy(event.target.value) }), button('保存', 'preferences', { proxy: proxy || state?.manualProxy || '' })) : null,
+        h('p', { className: 'dsrc-note' }, '“任意网络”需要这台电脑能访问 Cloudflare；手机不需要代理。改动在下次开启时生效。首次开启会下载 Cloudflare 的连接组件。')) : null,
     ),
     h('section', { className: 'dsrc-surface' }, h('div', { className: 'dsrc-row' }, h('h3', null, '扫码配对'), h('span', { className: 'dsrc-muted' }, expired ? '正在更新二维码' : firstURL ? '只用于添加新设备 · 自动更新' : '等待连接就绪')),
-      h('div', { className: 'dsrc-pair' }, h('div', { className: 'dsrc-code' }, state?.qr && !expired ? h('img', { src: state.qr, alt: '远程控制配对二维码' }) : h('div', { className: 'dsrc-placeholder' }, expired ? '点击刷新二维码' : '连接就绪后\n二维码会显示在这里')),
+      h('div', { className: 'dsrc-pair' }, state?.qr && !expired
+        ? h('button', { type: 'button', className: 'dsrc-code dsrc-code-button', title: '点击换一个新的二维码', 'aria-label': '配对二维码，点击刷新', disabled, onClick: () => { void act('refresh') } },
+          h('img', { src: state.qr, alt: '远程控制配对二维码' }), h('span', { className: 'dsrc-code-hint' }, '点击刷新'))
+        : h('div', { className: 'dsrc-code' }, h('div', { className: 'dsrc-placeholder' }, expired ? '正在更新二维码…' : '连接就绪后\n二维码会显示在这里')),
         h('div', { className: 'dsrc-steps' }, ...['开启连接并用手机扫码', '在本机面板确认配对请求', '进入远程界面，继续会话和审批'].map((step, i) => h('div', { className: 'dsrc-step', key: step }, h('span', { className: 'dsrc-number' }, String(i + 1).padStart(2, '0')), h('span', null, step))), h('p', { className: 'dsrc-muted' }, '配对后的设备与本机同权，可以管理设置、凭据和插件。二维码只在添加新设备时用一次，已连上的手机不受它影响。'))),
-      firstURL ? h('div', { className: 'dsrc-link' }, firstURL) : null,
-      h('div', { className: 'dsrc-actions' }, h('button', { type: 'button', className: 'dsrc-button', disabled: !firstURL || expired, onClick: () => { if (firstURL) void copy(firstURL) } }, '复制链接'), h('button', { type: 'button', className: 'dsrc-button', disabled: !state?.enabled || disabled, onClick: () => { void act('refresh') } }, '刷新二维码')),
+      firstURL && !expired ? h('button', { type: 'button', className: 'dsrc-link dsrc-link-button', title: '点击复制配对链接', onClick: () => { void copy(firstURL) } }, h('span', null, firstURL), h('span', { className: 'dsrc-link-hint' }, '点击复制')) : null,
       state?.links && state.links.length > 1 ? h('p', { className: 'dsrc-note' }, '其他网卡地址：', ...state.links.slice(1).map(link => h('span', { key: link.base }, ' ', h('button', { type: 'button', className: 'dsrc-button', onClick: () => { if (link.url) void copy(link.url) } }, link.base)))) : null,
     ),
     state?.local && state.requests.length ? h('section', { className: 'dsrc-surface' }, h('h3', null, '等待你确认'), ...state.requests.map(request => h('div', { className: 'dsrc-device dsrc-row', key: request.id }, h('div', null, h('div', { className: 'dsrc-device-name' }, request.name), h('div', { className: 'dsrc-muted' }, '允许后授予与本机相同的权限')), h('div', { className: 'dsrc-actions' }, button('拒绝', 'reject', { id: request.id }), button('允许连接', 'approve', { id: request.id }, 'dsrc-primary'))))) : null,

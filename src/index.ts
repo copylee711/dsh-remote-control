@@ -17,6 +17,7 @@ import { TunnelManager, ROUTES, ROUTE_IDS, isTemporaryHost, type Route } from '.
 import { body, gzipFor, isLoopback, json, sameOrigin } from './http.js'
 import { gzipSync } from 'node:zlib'
 import { isAccent, type Accent } from './accent.js'
+import { detectSystemProxy, httpProxy, type SystemProxy } from './system-proxy.js'
 
 export const name = '@copylee/dsh-remote-control'
 export const inject = ['connection']
@@ -26,7 +27,14 @@ export const Config = z.object({
 export interface Config { gatewayPort?: number }
 type Mode = 'public' | 'lan' | 'fixed'
 const isRoute = (value: unknown): value is Route => ROUTE_IDS.includes(value as Route)
-interface Preferences { autoStart: boolean; mode: Mode; proxy?: string; accent: Accent; route: Route }
+/** Where the tunnel's proxy comes from: the computer's own setting, an address typed in, or none. */
+type ProxyMode = 'system' | 'manual' | 'off'
+const isProxyMode = (value: unknown): value is ProxyMode => value === 'system' || value === 'manual' || value === 'off'
+interface Preferences {
+  autoStart: boolean; mode: Mode; proxy?: string; proxyMode: ProxyMode; accent: Accent; route: Route
+  /** The port last used, tried again so the address a phone knows keeps working after a restart. */
+  port?: number
+}
 const mime: Record<string, string> = { '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2', '.webmanifest': 'application/manifest+json' }
 
 /** Adapters that are rarely the network a phone is on: virtual switches, VPN / proxy tunnels. */
@@ -65,12 +73,14 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   const storage = join(process.env.DSH_HOME || join(homedir(), '.dsh'), 'dsh-remote-control', String(profile?.name || process.env.DSH_PROFILE || 'default').replace(/[^a-zA-Z0-9_-]/g, '_'))
   mkdirSync(storage, { recursive: true })
   const prefsFile = join(storage, 'preferences.json')
-  let preferences: Preferences = { autoStart: false, mode: 'public', accent: 'orange', route: 'cloudflare' }
+  let preferences: Preferences = { autoStart: false, mode: 'public', proxyMode: 'system', accent: 'orange', route: 'cloudflare' }
   let error: string | undefined
   if (existsSync(prefsFile)) {
     try {
       const stored = JSON.parse(readFileSync(prefsFile, 'utf8')) as Partial<Preferences>
-      preferences = { autoStart: stored.autoStart === true, mode: ['public', 'lan', 'fixed'].includes(String(stored.mode)) ? stored.mode! : 'public', proxy: typeof stored.proxy === 'string' ? stored.proxy : undefined, accent: isAccent(stored.accent) ? stored.accent : 'orange', route: isRoute(stored.route) ? stored.route : 'cloudflare' }
+      preferences = { autoStart: stored.autoStart === true, mode: ['public', 'lan', 'fixed'].includes(String(stored.mode)) ? stored.mode! : 'public', proxy: typeof stored.proxy === 'string' ? stored.proxy : undefined,
+        // Before there was a choice, an address meant "use this" and none meant "whatever the system has".
+        proxyMode: isProxyMode(stored.proxyMode) ? stored.proxyMode : stored.proxy ? 'manual' : 'system', port: Number.isInteger(stored.port) && stored.port! > 0 && stored.port! < 65536 ? stored.port : undefined, accent: isAccent(stored.accent) ? stored.accent : 'orange', route: isRoute(stored.route) ? stored.route : 'cloudflare' }
     } catch {
       // A damaged preferences file must not keep the plugin from loading; device authorizations live elsewhere.
       error = '远程控制的偏好设置文件已损坏，已恢复默认设置（设备授权不受影响）。'
@@ -130,11 +140,18 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
       return true
     }
     const baseURLs = () => !enabled || !gateway ? [] : activeMode === 'public' ? (tunnel?.phase === 'ready' && tunnel.url ? [tunnel.url] : []) : lanAddresses().map(ip => `http://${ip}:${gateway!.port}`)
+    // The system's proxy is looked up at most every 15 seconds; the panel asks for status far more often.
+    let detected: { at: number; value: SystemProxy | null } | undefined
+    const systemProxy = async (fresh = false) => {
+      if (fresh || !detected || Date.now() - detected.at > 15_000) detected = { at: Date.now(), value: await detectSystemProxy().catch(() => null) }
+      return detected.value
+    }
     const status = async (local: boolean) => {
       const links = baseURLs().map(base => ({ base, url: qr ? `${base}/pair#pair=${qr.token}` : undefined }))
       const active = new Set(gateway?.onlineIds() ?? [])
       return {
-        enabled, busy, mode: preferences.mode, activeMode, autoStart: preferences.autoStart, proxyConfigured: !!preferences.proxy, accent: preferences.accent,
+        enabled, busy, mode: preferences.mode, activeMode, autoStart: preferences.autoStart, proxyConfigured: !!preferences.proxy, proxyMode: preferences.proxyMode, manualProxy: local ? preferences.proxy : undefined,
+        systemProxy: preferences.proxyMode === 'system' && preferences.mode === 'public' ? await systemProxy() : undefined, accent: preferences.accent,
         route: preferences.route, activeRoute: enabled && activeMode === 'public' && tunnel?.route ? ROUTES[tunnel.route].name : undefined, routeNote: enabled && activeMode === 'public' ? tunnel?.note : undefined,
         phase: enabled ? activeMode === 'public' ? tunnel?.phase ?? 'starting' : 'ready' : error ? 'error' : 'off',
         error: error ?? tunnel?.error, warning: enabled && activeMode === 'public' ? tunnel?.warning : undefined, gatewayPort: gateway?.port ?? 0, local,
@@ -160,12 +177,23 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
       busy = true; error = undefined
       let ticket: number | undefined
       try {
-        const mode = preferences.mode, proxy = preferences.proxy, route = preferences.route
+        const mode = preferences.mode, route = preferences.route
+        const proxy = preferences.proxyMode === 'manual' ? preferences.proxy : preferences.proxyMode === 'system' && mode === 'public' ? (await systemProxy(true))?.url : undefined
         const stopping = stop(); ticket = generation
         await stopping; if (disposed || ticket !== generation) return
         credential = hostCookie(ready.connection, upstreamPort)
-        const next = gateway = new Gateway({ pairing, upstreamPort, upstreamCookie: () => credential, manage, index: renderIndex, asset, addresses: mode === 'lan' ? lanAddresses : undefined, accent: () => preferences.accent })
-        await next.listen(mode === 'lan' ? '0.0.0.0' : '127.0.0.1', config.gatewayPort ?? 0)
+        const create = () => new Gateway({ pairing, upstreamPort, upstreamCookie: () => credential, manage, index: renderIndex, asset, addresses: mode === 'lan' ? lanAddresses : undefined, accent: () => preferences.accent })
+        const host = mode === 'lan' ? '0.0.0.0' : '127.0.0.1'
+        let next = gateway = create()
+        // The port of last time first: a phone's bookmark or open tab then still points at this computer.
+        const wanted = config.gatewayPort || preferences.port || 0
+        try { await next.listen(host, wanted) }
+        catch (failure) {
+          // Only a port that cannot be had is worth a second try on another one.
+          if (config.gatewayPort || !wanted || !['EADDRINUSE', 'EACCES'].includes((failure as NodeJS.ErrnoException).code ?? '')) throw failure
+          next = gateway = create(); await next.listen(host, 0)   // taken by something else since
+        }
+        if (!config.gatewayPort && next.port !== preferences.port) { preferences = { ...preferences, port: next.port }; try { savePreferences() } catch { /* only a convenience */ } }
         if (disposed || ticket !== generation) { await next.close(); return }
         enabled = true; activeMode = mode; qr = pairing.issue()
         if (mode === 'public') {
@@ -221,6 +249,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
           if (input.mode !== undefined) { if (!['public', 'lan', 'fixed'].includes(String(input.mode))) throw new Error('连接模式不正确。'); next.mode = input.mode as Mode }
           if (input.route !== undefined) { if (!isRoute(input.route)) throw new Error('线路不正确。'); next.route = input.route }
           if (input.accent !== undefined) { if (!isAccent(input.accent)) throw new Error('强调色不正确。'); next.accent = input.accent }
+          if (input.proxyMode !== undefined) { if (!isProxyMode(input.proxyMode)) throw new Error('代理方式不正确。'); next.proxyMode = input.proxyMode }
           if (input.proxy !== undefined) {
             const value = String(input.proxy).trim()
             if (value) { const url = new URL(value); if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error('代理需为不带用户名和密码的 HTTP(S) 地址。'); }
