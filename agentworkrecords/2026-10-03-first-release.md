@@ -23,3 +23,5 @@ npm whoami 已确认账号 copylee，包名 @copylee/dsh-remote-control，首版
 首次本地 npm publish --access public 返回成功。公开 tarball 下载返回 HTTP 200，解包确认为 @copylee/dsh-remote-control@0.1.0，19 个文件，SHA-1 为 1a905d02298a10b7988125abc3f04f6b9eb270bf，与发布输出一致。发布后 registry 包元信息出现约 5 分钟的短暂 404，随后 npm view --prefer-online 确认 version 和 latest 均为 0.1.0。
 
 GitHub CI 37104616369 的 ubuntu-latest 和 windows-latest 均通过类型检查、21 项测试、构建及 npm pack。发布工作流和 Trusted Publisher 字段已写入 README，OIDC 配置由用户在首次发布之后完成。
+
+v0.1.0 标签随 main 原子推送，指向 689e336。标签发布工作流 37104961151 成功，检查后跳过已经发布的 0.1.0；对应 CI 37104961021 成功。这证明标签触发、版本检查、构建与跳过逻辑工作，不能代替首次真正的 OIDC 发布验证。隔离 QA 宿主已关闭，没有本插件的隧道工作进程残留；系统已有的 cloudflared 服务未操作。
