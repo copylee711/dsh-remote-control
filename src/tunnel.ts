@@ -33,23 +33,23 @@ export class TunnelManager {
     const child = this.child = fork(fileURLToPath(new URL('./tunnel-worker.js', import.meta.url)), [], { env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe', 'ipc'], execArgv: [] })
     // Drain package logging without exposing URLs/credentials in Host logs.
     child.stdout?.resume(); child.stderr?.resume()
-    this.timer = setTimeout(() => { if (generation === this.generation) this.fail('隧道启动超过 120 秒；请检查网络或配置电脑端代理后重试。') }, 120000); this.timer.unref()
+    this.timer = setTimeout(() => { if (generation === this.generation) this.fail('开启超过 120 秒仍未完成；请检查电脑的网络，或给电脑设置网络代理后重试。') }, 120000); this.timer.unref()
     child.on('message', value => {
       if (generation !== this.generation || !value || typeof value !== 'object' || !('phase' in value)) return
       const message = value as { phase: string; url?: string; error?: string }
       if (message.phase === 'downloading' || message.phase === 'starting') this.phase = message.phase
-      if (message.phase === 'error') this.fail(message.error ?? '隧道启动失败。')
+      if (message.phase === 'error') this.fail(message.error ?? '连接通道启动失败。')
       if (message.phase === 'url' && message.url) {
         let url: URL
         try { url = new URL(message.url); if (url.protocol !== 'https:' || !url.hostname.endsWith('.trycloudflare.com') || url.username || url.password || url.port || url.pathname !== '/') throw new Error() }
-        catch { this.fail('untun 返回的公网地址不符合预期。'); return }
+        catch { this.fail('连接服务返回的地址不符合预期，请重试。'); return }
         clearTimeout(this.timer)
         this.url = url.origin; this.gateway.allowAuthority(url.host); this.phase = 'verifying'; this.verifyUntil = Date.now() + VERIFY_MS
         void this.probe(generation)
       }
     })
-    child.on('error', () => { if (generation === this.generation) this.fail('无法启动隧道工作进程。') })
-    child.on('exit', () => { if (generation === this.generation && this.phase !== 'off' && this.phase !== 'error') this.fail('隧道进程已退出，请重新开启。') })
+    child.on('error', () => { if (generation === this.generation) this.fail('无法启动连接组件。') })
+    child.on('exit', () => { if (generation === this.generation && this.phase !== 'off' && this.phase !== 'error') this.fail('连接组件已退出，请重新开启。') })
   }
   private async probe(generation: number): Promise<void> {
     if (!this.url || this.checking) return
@@ -74,8 +74,8 @@ export class TunnelManager {
     } else if (this.phase === 'ready') {
       // This check leaves from the computer, whose route to the address can fail while phones still
       // get through. Only the tunnel process exiting ends a verified connection.
-      if (++this.failures >= 3) this.warning = `电脑端暂时无法访问公网地址（${this.lastFailure}）。手机可能仍可使用；如果手机也连不上，请重新连接。`
-    } else if (Date.now() >= this.verifyUntil) this.fail(`公网地址未通过连通性检查（${this.lastFailure}）；域名分配不代表可用。请重试、配置电脑端代理，或切换局域网连接。`)
+      if (++this.failures >= 3) this.warning = `这台电脑暂时访问不到自己的远程地址（${this.lastFailure}）。手机可能仍可使用；如果手机也连不上，请重新连接。`
+    } else if (Date.now() >= this.verifyUntil) this.fail(`远程地址没有连通（${this.lastFailure}）；请重试、给电脑设置网络代理，或改用“同一 Wi‑Fi”。`)
     else { this.timer = setTimeout(() => { void this.probe(generation) }, 3000); this.timer.unref() }
   }
   private fail(message: string): void {

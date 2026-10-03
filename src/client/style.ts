@@ -38,6 +38,16 @@ export const CSS = `
 .dsrc-danger{border-color:transparent;color:var(--rc-danger)!important;padding:0 8px}
 .dsrc-danger:hover:not(:disabled){background:color-mix(in srgb,var(--rc-danger) 10%,transparent)}
 
+.dsrc-ways{display:grid;gap:8px;margin-top:12px}
+.dsrc .dsrc-way{display:flex;align-items:flex-start;gap:10px;width:100%;text-align:left;border:1px solid var(--rc-line);border-radius:10px;background:transparent;padding:10px 12px;transition:border-color .12s,background .12s}
+.dsrc .dsrc-way:hover:not(:disabled){background:var(--rc-fill)}
+.dsrc .dsrc-way[aria-checked=true]{border-color:var(--rc-accent);background:color-mix(in srgb,var(--rc-accent) 6%,transparent)}
+.dsrc-way-mark{flex-shrink:0;width:16px;height:16px;margin-top:2px;border-radius:50%;border:1.5px solid var(--rc-muted)}
+.dsrc-way[aria-checked=true] .dsrc-way-mark{border:5px solid var(--rc-accent)}
+.dsrc-way-name{display:flex;align-items:center;gap:6px;font-weight:600}
+.dsrc-way-text{display:block;color:var(--rc-muted);font-size:12px;margin-top:2px}
+.dsrc-confirm{margin-top:10px;padding:12px;border-radius:10px;background:var(--rc-fill)}
+.dsrc-confirm .dsrc-actions{margin-top:10px}
 .dsrc-mode{display:inline-flex;gap:2px;margin-top:12px;padding:3px;border-radius:10px;background:var(--rc-fill);max-width:100%}
 .dsrc-mode button{border:0;background:transparent;color:var(--rc-muted);border-radius:7px;height:28px;padding:0 14px;font-size:13px;white-space:nowrap}
 .dsrc-mode button[aria-pressed=true]{background:var(--rc-paper);color:var(--rc-ink);font-weight:600;box-shadow:0 1px 2px #0000001f}
@@ -91,7 +101,8 @@ export const CSS = `
 .dsrc-mode button{flex:1;height:40px;padding:0 6px;font-size:14px}
 .dsrc-toggle input{width:20px;height:20px}
 .dsrc .dsrc-swatch{width:28px;height:28px}
-.dsrc-muted,.dsrc-note,.dsrc-sub,.dsrc-proxy summary{font-size:14px}
+.dsrc-muted,.dsrc-note,.dsrc-sub,.dsrc-proxy summary,.dsrc-way-text{font-size:14px}
+.dsrc .dsrc-way{padding:14px}
 .dsrc-row{flex-wrap:wrap}
 .dsrc-dialog{padding:16px}
 }

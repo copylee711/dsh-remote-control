@@ -3,6 +3,7 @@ import * as React from 'react'
 import { MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
 import { useStore, useLoad, useAction, value, cacheText, cachedText, type Host } from './common.js'
 import { Icon } from './icons.js'
+import { Picker } from './picker.js'
 import { chatContent, pendingInteraction } from './host.js'
 const h = React.createElement
 const markdownLabels = { code: { copyLabel: '复制代码', copiedLabel: '已复制' }, footnotes: '注释' }
@@ -81,7 +82,7 @@ function BoundChat({ ctx, binding, sessionId, onSession }: { ctx: Host; binding:
     return result
   }
   const content = chatContent(chat)
-  const modelOptions = (models.data?.groups ?? []).flatMap((provider: Host) => (provider.models ?? []).map((m: Host) => ({ provider: provider.id, model: m.id ?? m.model, name: m.name ?? m.id ?? m.model, reasoning: m.reasoning })))
+  const modelOptions = (models.data?.groups ?? []).flatMap((provider: Host) => (provider.models ?? []).map((m: Host) => ({ provider: provider.id, providerName: provider.name || provider.label || provider.id, model: m.id ?? m.model, name: m.name ?? m.id ?? m.model, reasoning: m.reasoning })))
   const currentModel = modelOptions.find((m: Host) => `${m.provider}/${m.model}` === model)
   const trace = view === 'trace'
   const messages = content.nodes.map((node: Host) => {
@@ -98,25 +99,26 @@ function BoundChat({ ctx, binding, sessionId, onSession }: { ctx: Host; binding:
   })
   const empty = !content.nodes.length && !content.partial && !(session.pendingSubmissions ?? []).length
 
-  const pickModel = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const picked = modelOptions.find((m: Host) => `${m.provider}/${m.model}` === e.target.value)
+  const pickModel = (key: string) => {
+    const picked = modelOptions.find((m: Host) => `${m.provider}/${m.model}` === key)
     if (picked) void action.run(async () => { value(await ctx.remote.session.selectModel({ sessionId, provider: picked.provider, model: picked.model })); setModel(`${picked.provider}/${picked.model}`) }, '')
   }
-  const pickPermission = async (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const mode = e.target.value
+  const pickPermission = async (mode: string) => {
     if (/full|全部|完全/.test(mode) && !await confirmAction('完全权限允许修改电脑文件与设置。继续？')) return
     void action.run(() => binding.session.command(`/permission ${mode}`), '')
   }
   const sheet = h('div', { className: 'rc-sheet' },
-    currentModel?.reasoning?.efforts?.length ? h('label', { className: 'rc-sheet-row' }, '思考强度',
-      h('select', { 'aria-label': '思考强度', value: selection?.reasoningEffort ?? currentModel.reasoning.defaultEffort ?? '', disabled: action.busy, onChange: (e: React.ChangeEvent<HTMLSelectElement>) => { void action.run(() => ctx.remote.session.selectModel({ sessionId, provider: currentModel.provider, model: currentModel.model, reasoningEffort: e.target.value }), '') } },
-        ...currentModel.reasoning.efforts.map((effort: Host) => h('option', { key: effort.id, value: effort.id }, effort.name)))) : null,
-    permissions.data?.options?.length ? h('label', { className: 'rc-sheet-row' }, '权限模式',
-      h('select', { 'aria-label': '权限模式', value: permission?.currentValue ?? '', disabled: action.busy, onChange: pickPermission },
-        h('option', { value: '' }, '未选择'), ...permissions.data.options.map((option: Host) => h('option', { key: option.value, value: option.value }, option.name)))) : null,
-    presets.data?.presets?.length ? h('label', { className: 'rc-sheet-row', title: session.blank ? undefined : '会话开始后 Agent 配置固定' }, 'Agent',
-      h('select', { 'aria-label': 'Agent 预设', value: typeof preset === 'string' ? preset : '', disabled: action.busy || !session.blank, onChange: (e: React.ChangeEvent<HTMLSelectElement>) => { void action.run(() => ctx.remote.agentPresets.select(sessionId, e.target.value), '') } },
-        h('option', { value: '' }, '默认 Agent'), ...presets.data.presets.map((option: Host) => h('option', { key: option.id, value: option.id, disabled: !!option.broken }, option.name || option.id)))) : null,
+    currentModel?.reasoning?.efforts?.length ? h('div', { className: 'rc-sheet-row' }, '思考强度',
+      h(Picker, { className: 'rc-sheet-pick', label: '思考强度', value: selection?.reasoningEffort ?? currentModel.reasoning.defaultEffort ?? '', disabled: action.busy,
+        choices: currentModel.reasoning.efforts.map((effort: Host) => ({ value: effort.id, label: effort.name })),
+        onChange: (effort: string) => { void action.run(() => ctx.remote.session.selectModel({ sessionId, provider: currentModel.provider, model: currentModel.model, reasoningEffort: effort }), '') } })) : null,
+    permissions.data?.options?.length ? h('div', { className: 'rc-sheet-row' }, '权限模式',
+      h(Picker, { className: 'rc-sheet-pick', label: '权限模式', value: permission?.currentValue ?? '', disabled: action.busy, placeholder: '未选择', onChange: (mode: string) => { void pickPermission(mode) },
+        choices: permissions.data.options.map((option: Host) => ({ value: option.value, label: option.name, hint: option.description })) })) : null,
+    presets.data?.presets?.length ? h('div', { className: 'rc-sheet-row', title: session.blank ? undefined : '会话开始后 Agent 配置固定' }, 'Agent',
+      h(Picker, { className: 'rc-sheet-pick', label: 'Agent 预设', value: typeof preset === 'string' ? preset : '', disabled: action.busy || !session.blank, placeholder: '默认 Agent',
+        choices: [{ value: '', label: '默认 Agent' }, ...presets.data.presets.map((option: Host) => ({ value: option.id, label: option.name || option.id, disabled: !!option.broken }))],
+        onChange: (id: string) => { void action.run(() => ctx.remote.agentPresets.select(sessionId, id), '') } })) : null,
     h('label', { className: 'rc-sheet-row' }, '显示工具轨迹',
       h('input', { type: 'checkbox', checked: trace, onChange: (e: React.ChangeEvent<HTMLInputElement>) => setView(e.target.checked ? 'trace' : 'chat') })))
 
@@ -149,11 +151,12 @@ function BoundChat({ ctx, binding, sessionId, onSession }: { ctx: Host; binding:
             if (event.ctrlKey || event.metaKey || (keyboard && !event.shiftKey)) { event.preventDefault(); void send() }
           } }),
         h('div', { className: 'rc-composer-bar' },
-          h('input', { type: 'file', multiple: true, hidden: true, ref: picker, onChange: (event: React.ChangeEvent<HTMLInputElement>) => { try { setAttachments(previous => [...previous, ...ctx.conversation.createDrafts(sessionId, Array.from(event.target.files || []))]) } catch (e) { action.setError(String(e)) }; event.target.value = '' } }),
+          h('input', { type: 'file', accept: '*/*', multiple: true, hidden: true, ref: picker, onChange: (event: React.ChangeEvent<HTMLInputElement>) => { try { setAttachments(previous => [...previous, ...ctx.conversation.createDrafts(sessionId, Array.from(event.target.files || []))]) } catch (e) { action.setError(String(e)) }; event.target.value = '' } }),
           h('button', { className: 'rc-round rc-plain', 'aria-label': '上传附件', onClick: () => picker.current?.click() }, h(Icon, { name: 'plus' })),
           h('button', { className: 'rc-round rc-plain', 'aria-label': '会话选项', 'aria-expanded': options, onClick: () => setOptions(!options) }, h(Icon, { name: 'sliders' })),
-          modelOptions.length ? h('select', { className: 'rc-model', 'aria-label': '会话模型', value: model, disabled: action.busy, onChange: pickModel },
-            h('option', { value: '' }, '当前模型'), ...modelOptions.map((m: Host) => h('option', { key: `${m.provider}/${m.model}`, value: `${m.provider}/${m.model}` }, m.name))) : h('span', { className: 'rc-model rc-muted' }, '默认模型'),
+          modelOptions.length ? h(Picker, { className: 'rc-model', label: '会话模型', value: model, disabled: action.busy, placeholder: '选择模型', onChange: pickModel,
+            // The same model can be offered by several providers: list them under the provider's name.
+            choices: modelOptions.map((m: Host) => ({ value: `${m.provider}/${m.model}`, label: m.name, group: m.providerName })) }) : h('span', { className: 'rc-model rc-muted' }, '默认模型'),
           session.running ? h('button', { className: 'rc-round rc-stop', 'aria-label': '停止生成', onClick: () => { void action.run(() => binding.session.cancel(), '') } }, h(Icon, { name: 'stop' })) : null,
           h('button', { className: 'rc-round rc-send', 'aria-label': '发送消息', disabled: action.busy || (!draft.trim() && !attachments.length), onClick: () => { void send() } }, h(Icon, { name: 'send' }))))))
 }

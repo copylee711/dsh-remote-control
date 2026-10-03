@@ -3,6 +3,7 @@ import * as React from 'react'
 import { RemoteControlPanel, command } from '../client/index.js'
 import { useLoad, useAction, useStore, value, label, Boundary, type Host } from './common.js'
 import { Files } from './files.js'
+import { Picker } from './picker.js'
 import { PluginPage } from './compatibility.js'
 import { fields, namespaces } from './labels.js'
 const h = React.createElement
@@ -18,7 +19,7 @@ const categories: Array<[string, string, RegExp]> = [
 const categoryOf = (ns: string) => categories.find(([, , pattern]) => pattern.test(ns))?.[0]
 const SELF = '@copylee/dsh-remote-control'
 const builtIn = new Set(['general', 'models', 'plugins', 'agent-presets', 'skills', 'cost', 'archive', 'schedule', 'copylee-remote-control'])
-export function Management({ ctx, page, start = '', sessionId, onSession }: { ctx: Host; page: string; start?: string; sessionId?: string; onSession: (id: string) => void }) {
+export function Management({ ctx, page, start = '', sessionId, onSession, appearance }: { ctx: Host; page: string; start?: string; sessionId?: string; onSession: (id: string) => void; appearance?: React.ReactNode }) {
   const [section, setSection] = React.useState(start)
   const description = useLoad<Host>(() => ctx.remote.settings.describe().then(value), [ctx])
   const revision = React.useSyncExternalStore((cb: () => void) => ctx.slots.subscribe('settings.section', cb), () => ctx.slots.getVersion('settings.section'))
@@ -28,7 +29,7 @@ export function Management({ ctx, page, start = '', sessionId, onSession }: { ct
   return h('div', { className: 'rc-scroll' }, h('div', { className: 'rc-content' },
     section ? h('button', { onClick: async () => setSection(''), className: 'rc-pill rc-small' }, '‹ 返回设置分类') : null,
     description.error ? h('div', { className: 'rc-error' }, description.error, h('button', { onClick: description.reload }, '重试')) : null,
-    !section ? h(React.Fragment, null, h('p', { className: 'rc-muted' }, '所有修改作用于正在连接的电脑。'), h('section', { className: 'rc-list' },
+    !section ? h(React.Fragment, null, appearance, h('p', { className: 'rc-muted' }, '以下修改作用于正在连接的电脑。'), h('section', { className: 'rc-list' },
       ...categories.map(([id, title]) => h('button', { key: id, className: 'rc-menu-row', onClick: async () => setSection(id) }, title, h('span', null, '›'))),
       h('button', { className: 'rc-menu-row', onClick: async () => setSection('plugins') }, '插件与安装任务', h('span', null, '›')),
       h('button', { className: 'rc-menu-row', onClick: async () => setSection('remote') }, '远程连接与设备', h('span', null, '›')),
@@ -57,11 +58,16 @@ function SchemaField({ namespace, refId, path, current, change }: { namespace: H
   const props = { 'aria-label': name, disabled: schema.meta?.disabled === true }
   let input: React.ReactNode
   if (schema.type === 'boolean') input = h('input', { ...props, type: 'checkbox', checked: !!current, onChange: (e: React.ChangeEvent<HTMLInputElement>) => change(path, e.target.checked) })
-  else if (schema.type === 'union' && schema.list?.every((r: Host) => schemaOf(namespace, r)?.type === 'const')) input = h('select', { ...props, value: String(current ?? ''), onChange: (e: React.ChangeEvent<HTMLSelectElement>) => { const option = schema.list.map((r: Host) => schemaOf(namespace, r)).find((s: Host) => String(s.value) === e.target.value); change(path, option?.value) } }, schema.list.some((r: Host) => String(schemaOf(namespace, r)?.value) === String(current ?? '')) ? null : h('option', { value: String(current ?? ''), disabled: true }, current === undefined || current === '' ? '未设置' : String(current)), ...schema.list.map((r: Host) => { const s = schemaOf(namespace, r); return h('option', { key: String(s.value), value: String(s.value) }, fieldLabel(s, String(s.value))) }))
+  else if (schema.type === 'union' && schema.list?.every((r: Host) => schemaOf(namespace, r)?.type === 'const')) {
+    const options = schema.list.map((r: Host) => schemaOf(namespace, r))
+    input = h(Picker, { label: name, value: String(current ?? ''), disabled: props.disabled, placeholder: current === undefined || current === '' ? '未设置' : String(current),
+      choices: options.map((s: Host) => ({ value: String(s.value), label: fieldLabel(s, String(s.value)) })),
+      onChange: (next: string) => change(path, options.find((s: Host) => String(s.value) === next)?.value) })
+  }
   else if (schema.type === 'number' || schema.type === 'natural' || schema.type === 'integer') input = h('input', { ...props, type: 'number', value: current ?? '', onChange: (e: React.ChangeEvent<HTMLInputElement>) => change(path, e.target.value === '' ? undefined : Number(e.target.value)) })
   else if (schema.type === 'string') input = secret ? h(SecretField, { name, onChange: (v: string) => change(path, v || KEEP_VALUE) }) : h('input', { ...props, type: 'text', autoComplete: 'off', value: current ?? '', onChange: (e: React.ChangeEvent<HTMLInputElement>) => change(path, e.target.value) })
   else input = h(JsonField, { name, current, onChange: (v: Host) => change(path, v) })
-  return h('label', { className: 'rc-label' }, h('span', null, name), input, description ? h('span', { className: 'rc-muted' }, description) : null)
+  return h(schema.type === 'union' ? 'div' : 'label', { className: 'rc-label' }, h('span', null, name), input, description ? h('span', { className: 'rc-muted' }, description) : null)
 }
 function SecretField({ name, onChange }: { name: string; onChange: (v: string) => void }) {
   const [text, setText] = React.useState('')

@@ -1,8 +1,9 @@
 import * as React from 'react'
 import { Chat } from './chat.js'
 import { Management } from './management.js'
-import { useStore, useAction, value, cacheText, cachedText, Boundary, type Host } from './common.js'
+import { useStore, useAction, value, cacheText, cachedText, Boundary, useBackClose, type Host } from './common.js'
 import { Icon } from './icons.js'
+import { Picker } from './picker.js'
 import { command } from '../client/index.js'
 import { ACCENTS, ACCENT_IDS, isAccent, type Accent } from '../accent.js'
 import { DialogViewport, ask, confirmAction } from './dialog.js'
@@ -38,7 +39,10 @@ export function App({ ctx }: { ctx: Host }): React.ReactElement {
       document.body.toggleAttribute('data-ds-dark-theme', dark)
     }
     apply(); cacheText('dsrc-theme', theme); media.addEventListener('change', apply)
-    return () => media.removeEventListener('change', apply)
+    // The Host's theme service sets the same attribute from the computer's own setting; here the app's choice rules.
+    const guard = new MutationObserver(() => { if (document.body.hasAttribute('data-ds-dark-theme') !== (document.documentElement.dataset.rcTheme === 'dark')) apply() })
+    guard.observe(document.body, { attributes: true, attributeFilter: ['data-ds-dark-theme'] })
+    return () => { media.removeEventListener('change', apply); guard.disconnect() }
   }, [theme])
   React.useEffect(() => {
     const update = () => document.documentElement.style.setProperty('--rc-height', `${window.visualViewport?.height ?? window.innerHeight}px`)
@@ -64,6 +68,19 @@ export function App({ ctx }: { ctx: Host }): React.ReactElement {
   const selectedArchived = !!workspaces.archivedSessionIds?.includes(sessionId)
   const workspace = workspaces.items?.find((item: Host) => item.workspaceId === workspaceId)
   const ids = (sessions.ids ?? []).filter((id: string) => (!workspace || archived || workspace.sessionIds.includes(id)) && archived === !!workspaces.archivedSessionIds?.includes(id) && (!query || (searchIds?.includes(id) || (sessions.byId[id]?.displayTitle || '').toLowerCase().includes(query.toLowerCase()))))
+  // Theme and accent colour, shown at the top of the settings page.
+  const appearance = h('section', { className: 'rc-card rc-appearance' },
+    h('h3', null, '外观'),
+    h('div', { className: 'rc-sheet-row' }, '主题',
+      h('div', { className: 'rc-segment', role: 'group', 'aria-label': '界面主题' },
+        ...([['system', '跟随系统'], ['light', '浅色'], ['dark', '深色']] as const).map(([id, name]) =>
+          h('button', { key: id, 'aria-pressed': theme === id, onClick: () => setTheme(id) }, name)))),
+    h('div', { className: 'rc-sheet-row' }, '强调色',
+      h('div', { className: 'rc-swatches', role: 'radiogroup', 'aria-label': '强调色' },
+        ...ACCENT_IDS.map(id =>
+          h('button', { key: id, className: 'rc-swatch', role: 'radio', 'aria-checked': accent === id, 'aria-label': ACCENTS[id].name, title: ACCENTS[id].name, 'data-accent': id, onClick: () => chooseAccent(id) })))))
+  useBackClose(page !== 'chat', () => setPage('chat'))
+  useBackClose(drawer, () => setDrawer(false))
   const go = (next: string, section = '') => { setPage(next); setStart(section); setDrawer(false) }
   const title = page === 'chat' ? selected?.displayTitle || selected?.title || '新会话'
     : page === 'files' ? '文件与交付物'
@@ -86,8 +103,8 @@ export function App({ ctx }: { ctx: Host }): React.ReactElement {
       nav('clock', '定时任务', () => go('settings', 'automation'), page === 'settings' && start === 'automation'),
       nav('plug', '插件', () => go('settings', 'plugins'), page === 'settings' && start === 'plugins'),
       nav('archive', archived ? '返回最近会话' : '已归档会话', () => setArchived(!archived), archived)),
-    (workspaces.items ?? []).length > 1 ? h('select', { className: 'rc-workspace', 'aria-label': '工作区', value: workspaceId, onChange: (e: React.ChangeEvent<HTMLSelectElement>) => setWorkspaceId(e.target.value) },
-      ...(workspaces.items ?? []).map((w: any) => h('option', { key: w.workspaceId, value: w.workspaceId }, w.title || w.path))) : null,
+    (workspaces.items ?? []).length > 1 ? h(Picker, { className: 'rc-workspace', label: '工作区', value: workspaceId, onChange: setWorkspaceId,
+      choices: (workspaces.items ?? []).map((w: any) => ({ value: w.workspaceId, label: w.title || w.path })) }) : null,
     h('hr', { className: 'rc-divider' }),
     h('div', { className: 'rc-session-list' },
       ...ids.map((id: string) => h('button', { key: id, className: 'rc-session', 'aria-current': sessionId === id && page === 'chat', onClick: () => select(id) },
@@ -95,12 +112,6 @@ export function App({ ctx }: { ctx: Host }): React.ReactElement {
         sessions.byId[id]?.displayTitle || sessions.byId[id]?.title || '新会话')),
       ids.length ? null : h('p', { className: 'rc-muted rc-empty' }, archived ? '没有归档会话' : query ? '没有匹配的会话' : '还没有会话')),
     h('div', { className: 'rc-sidebar-footer' },
-      h('div', { className: 'rc-look' },
-        h('select', { className: 'rc-theme', 'aria-label': '界面主题', value: theme, onChange: (e: React.ChangeEvent<HTMLSelectElement>) => setTheme(e.target.value) },
-          h('option', { value: 'system' }, '跟随系统'), h('option', { value: 'light' }, '浅色'), h('option', { value: 'dark' }, '深色')),
-        h('div', { className: 'rc-swatches', role: 'radiogroup', 'aria-label': '强调色' },
-          ...ACCENT_IDS.map(id =>
-            h('button', { key: id, className: 'rc-swatch', role: 'radio', 'aria-checked': accent === id, 'aria-label': ACCENTS[id].name, title: ACCENTS[id].name, 'data-accent': id, onClick: () => chooseAccent(id) })))),
       h('div', { className: 'rc-row' },
         h('button', { className: 'rc-primary rc-new', disabled: action.busy, onClick: () => { void create() } }, h(Icon, { name: 'compose' }), '新会话'),
         round('settings', '设置与管理', () => go('settings')))))
@@ -134,5 +145,5 @@ export function App({ ctx }: { ctx: Host }): React.ReactElement {
           : sessionId ? h(Boundary, { key: sessionId, what: '这个会话' }, h(Chat, { ctx, sessionId, onSession: select }))
             : h('div', { className: 'rc-scroll rc-welcome' }, h('h1', null, '今天，我们继续做什么？'), h('p', null, '创建会话，接着在电脑上的工作。'))
         : page === 'session' ? sessionActions
-          : h(Boundary, { key: `${page}:${start}`, what: '这个页面' }, h(Management, { ctx, page, start, sessionId, onSession: select }))))
+          : h(Boundary, { key: `${page}:${start}`, what: '这个页面' }, h(Management, { ctx, page, start, sessionId, onSession: select, appearance }))))
 }

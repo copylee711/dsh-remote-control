@@ -40,7 +40,10 @@ export function lanAddresses(interfaces = networkInterfaces()): string[] {
     if (VIRTUAL_ADAPTER.test(row.name)) return 2
     return a === 192 && b === 168 || a === 10 || (a === 172 && b >= 16 && b <= 31) ? 0 : 1
   }
-  return rows.map((row, index) => ({ row, index, rank: rank(row) })).sort((x, y) => x.rank - y.rank || x.index - y.index).map(item => item.row.address)
+  const ranked = rows.map((row, index) => ({ row, index, rank: rank(row) })).sort((x, y) => x.rank - y.rank || x.index - y.index)
+  // Addresses no phone can reach are left out, unless there is nothing else.
+  const usable = ranked.filter(item => item.rank < 3)
+  return (usable.length ? usable : ranked).map(item => item.row.address)
 }
 
 /** A temporary public address: gone for good once its tunnel closes. */
@@ -145,7 +148,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     shutdown = stop
     const start = async () => {
       if (busy) throw new Error('连接操作正在进行，请稍后再试。')
-      if (preferences.mode === 'fixed') throw new Error('固定入口暂不可用，请选择临时公网或局域网。')
+      if (preferences.mode === 'fixed') throw new Error('这种连接方式暂不可用，请选择“同一 Wi‑Fi”或“任意网络”。')
       busy = true; error = undefined
       let ticket: number | undefined
       try {

@@ -37,7 +37,7 @@ try {
   await send('独立远程界面聊天验证')
   await page.getByText('远程链路验证通过：这条回复由隔离 DSH 的本地测试模型逐段生成。', { exact: true }).waitFor()
   check('create, submit and live response through real DSH session services')
-  await page.getByRole('combobox', { name: '会话模型' }).selectOption('remote-qa/qa-model'); check('model selector commits host selection')
+  await page.getByRole('button', { name: '会话模型', exact: true }).click(); await page.locator('.rc-picker-sheet[open] .rc-picker-group').filter({ hasText: /./ }).first().waitFor(); await page.locator('.rc-picker-sheet[open] .rc-picker-option').filter({ hasText: 'Remote QA' }).first().click(); await page.locator('.rc-picker-sheet[open]').waitFor({ state: 'detached' }).catch(() => {}); check('model selector commits host selection')
   const before = existsSync('.qa/approval-executions.jsonl') ? readFileSync('.qa/approval-executions.jsonl', 'utf8').trim().split('\n').length : 0
   await send('验证工具审批')
   await page.getByRole('button', { name: '允许这一次', exact: true }).waitFor()
@@ -92,7 +92,7 @@ try {
   await openSettings(); await page.getByRole('button', { name: /^通用设置/ }).click()
   await page.locator('[data-namespace=ui-theme]').waitFor()
   const themeCard = page.locator('[data-namespace=ui-theme]')
-  await themeCard.getByRole('combobox').selectOption('light'); await themeCard.getByRole('button', { name: '保存', exact: true }).click()
+  await themeCard.locator('.rc-picker').first().click(); await page.locator('.rc-picker-sheet[open] .rc-picker-option[aria-selected=false]').first().click(); await themeCard.getByRole('button', { name: '保存', exact: true }).click()
   await page.waitForTimeout(500); check('schema settings form writes with expected revision')
   await page.screenshot({ path: '.qa/v020-settings.png' })
   await page.getByRole('button', { name: '‹ 返回设置分类', exact: true }).click(); await page.getByRole('button', { name: /^模型与凭据/ }).click()
@@ -147,7 +147,7 @@ try {
   await page.setViewportSize({ width: 390, height: 844 })
   const composer = page.getByRole('textbox', { name: '消息', exact: true })
   await composer.fill('草稿恢复验证'); await page.reload(); await expect(composer).toHaveValue('草稿恢复验证'); check('draft survives reload without replaying prompt')
-  await page.getByRole('button', { name: '打开会话列表', exact: true }).click(); await page.getByRole('combobox', { name: '界面主题' }).selectOption('dark'); await page.getByRole('button', { name: '关闭导航' }).click(); await page.screenshot({ path: '.qa/v020-dark.png' }); check('dark theme')
+  await page.getByRole('button', { name: '打开会话列表', exact: true }).click(); await page.getByRole('button', { name: '设置与管理', exact: true }).click(); await page.getByRole('group', { name: '界面主题' }).getByRole('button', { name: '深色', exact: true }).click(); await page.waitForTimeout(300); await page.screenshot({ path: '.qa/v020-dark.png' }); check('dark theme')
   const granted = (await manage('status')).devices.find(device => device.online)
   deliberateDisconnect = true
   await manage('revoke', { id: granted.id }); await page.waitForTimeout(300)

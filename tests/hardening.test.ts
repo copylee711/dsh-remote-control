@@ -58,7 +58,9 @@ it('lists the address of the physical network before virtual adapters and unreac
     'Link': [row('169.254.10.2')],
     'WLAN': [row('192.168.1.23')],
     'Loopback': [{ ...row('127.0.0.1'), internal: true }],
-  })).toEqual(['192.168.1.23', '172.29.16.1', '198.18.0.1', '169.254.10.2'])
+  })).toEqual(['192.168.1.23', '172.29.16.1'])
+  // With nothing better, the unreachable ones are still shown rather than an empty list.
+  expect(Plugin.lanAddresses({ 'Link': [row('169.254.10.2')] })).toEqual(['169.254.10.2'])
 })
 
 it('admits the addresses the computer has now, and marks what it forwards as remote', async () => {
@@ -76,6 +78,12 @@ it('admits the addresses the computer has now, and marks what it forwards as rem
   addresses = ['192.168.1.99']
   expect((await get(gateway.port, { host: `192.168.1.99:${gateway.port}`, cookie })).status).toBe(200)
   expect((await get(gateway.port, { host: `192.168.1.23:${gateway.port}`, cookie })).status).toBe(403)
+  // Opened from another app: the app page is served, anything else from another site is refused.
+  const local = `127.0.0.1:${gateway.port}`
+  const arriving = { host: local, cookie, 'sec-fetch-site': 'cross-site', 'sec-fetch-mode': 'navigate', 'sec-fetch-dest': 'document' }
+  const page = await new Promise<number>((resolve, reject) => { const req = request({ hostname: '127.0.0.1', port: gateway.port, path: '/', headers: arriving }, res => { res.resume(); resolve(res.statusCode ?? 0) }); req.on('error', reject); req.end() })
+  expect(page).not.toBe(403)
+  expect((await get(gateway.port, arriving)).status).toBe(403)
   // A client cannot clear or forge the marker.
   const forwarded = await get(gateway.port, { host: `127.0.0.1:${gateway.port}`, cookie, [REMOTE_MARK]: '0' })
   expect(JSON.parse(forwarded.body)).toEqual({ mark: '1' })

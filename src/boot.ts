@@ -2,6 +2,8 @@
 function remoteBoot(): void {
   const globals = window as unknown as Record<string, any>
   globals.__DSH_REMOTE_CONTROL__ = true
+  // The Host's page declares English; the app is Chinese, and browsers would offer to translate it.
+  document.documentElement.lang = 'zh-CN'; document.documentElement.setAttribute('translate', 'no')
   globals.__DSH_TRANSPORT__ = { ...globals.__DSH_TRANSPORT__, ownsHost: true }
   const originalFetch = window.fetch.bind(window)
   globals.__DSH_FILE_UPLOAD__ = { fetch: originalFetch }

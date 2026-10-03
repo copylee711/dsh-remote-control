@@ -13,6 +13,6 @@ export function pairingPage(accent: Accent = 'orange'): string {
   </script></body></html>`
 }
 export function deniedPage(accent: Accent = 'orange'): string {
-  return `<!doctype html><html lang="zh-CN" data-rc-accent="${accent}"><head><meta charset="utf-8"><link rel="icon" href="data:,"><meta name="viewport" content="width=device-width,initial-scale=1"><title>设备尚未授权</title><style>${css}${accentCSS(':root', 'media')}</style></head><body><main class="card"><span class="eyebrow">DSH · 远程</span><h1>需要重新连接</h1><p>这台设备尚未配对，授权已过期，或已被撤销。请在电脑上打开远程控制面板，扫描新的二维码并确认配对。</p><small>关闭远程连接会保留设备授权；临时公网地址变化后，需要重新扫码。</small></main></body></html>`
+  return `<!doctype html><html lang="zh-CN" data-rc-accent="${accent}"><head><meta charset="utf-8"><link rel="icon" href="data:,"><meta name="viewport" content="width=device-width,initial-scale=1"><title>设备尚未授权</title><style>${css}${accentCSS(':root', 'media')}</style></head><body><main class="card"><span class="eyebrow">DSH · 远程</span><h1>需要重新连接</h1><p>这台设备尚未配对，授权已过期，或已被撤销。请在电脑上打开远程控制面板，扫描新的二维码并确认配对。</p><small>“任意网络”方式每次开启都会换一个新地址，旧地址上的授权随之失效，需要重新扫码。</small></main></body></html>`
 }
 

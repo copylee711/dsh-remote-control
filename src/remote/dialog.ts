@@ -1,4 +1,5 @@
 import * as React from 'react'
+import { useBackClose } from './common.js'
 const h = React.createElement
 interface Request { text: string; initial?: string; resolve: (answer: string | null) => void }
 let request: Request | undefined
@@ -13,6 +14,7 @@ export async function confirmAction(text: string) { return (await open(text)) !=
 export function DialogViewport() {
   const current = React.useSyncExternalStore(listener => { listeners.add(listener); return () => { listeners.delete(listener) } }, () => request)
   const ref = React.useRef<HTMLDialogElement>(null), [text, setText] = React.useState('')
+  useBackClose(!!current, () => answer(null))
   const answer = (result: string | null) => { const previous = request; request = undefined; publish(); previous?.resolve(result) }
   React.useEffect(() => {
     if (current) { setText(current.initial ?? ''); ref.current?.showModal() } else ref.current?.close()

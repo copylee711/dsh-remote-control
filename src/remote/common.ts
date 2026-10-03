@@ -41,6 +41,33 @@ export function useAction() {
   }
   return { busy, error, notice, run, setError, setNotice }
 }
+/**
+ * The phone's back button closes what is open (a sheet, the drawer, a page) instead of
+ * leaving the app. Each history entry carries a depth; a layer that opens makes sure an
+ * entry exists at its depth, and going back closes every layer deeper than the entry
+ * reached. Closing a layer on screen leaves its entry in place to be reused, so no
+ * history call ever has to be undone.
+ */
+const layers: Array<{ close: () => void }> = []
+const depth = () => Number((history.state as { rcLayer?: number } | null)?.rcLayer ?? 0)
+if (typeof window !== 'undefined') window.addEventListener('popstate', () => {
+  const reached = depth()
+  let closed = false
+  while (layers.length > reached) { layers.pop()!.close(); closed = true }
+  // Nothing was open at this depth: these are spare entries, step over all of them at once.
+  if (!closed && reached > layers.length) history.go(layers.length - reached)
+})
+export function useBackClose(open: boolean, close: () => void): void {
+  const latest = React.useRef(close); latest.current = close
+  React.useEffect(() => {
+    if (!open) return
+    const layer = { close: () => latest.current() }
+    layers.push(layer)
+    if (depth() < layers.length) history.pushState({ rcLayer: layers.length }, '')
+    return () => { const index = layers.indexOf(layer); if (index >= 0) layers.splice(index, 1) }
+  }, [open])
+}
+
 /** Keeps a rendering failure inside one part of the page, with a way back. */
 export class Boundary extends React.Component<{ children?: React.ReactNode; what?: string }, { error: string }> {
   state = { error: '' }

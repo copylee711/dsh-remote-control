@@ -78,7 +78,10 @@ export class Gateway {
   private cookieHeader(req: IncomingMessage, credential: string): string {
     // Trust forwarded protocol only after Host admission; the tunnel targets this private port.
     const secure = req.headers['x-forwarded-proto'] === 'https'
-    return `dsh_rc=${credential}; Path=/; HttpOnly; SameSite=Strict; Max-Age=2592000${secure ? '; Secure' : ''}`
+    // Lax, not Strict: a link opened from another app (a QR scanner, a chat, a home-screen shortcut) is a
+    // cross-site navigation, and Strict would leave a paired device looking unpaired. Cross-site requests
+    // other than opening the app page are still refused below.
+    return `dsh_rc=${credential}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000${secure ? '; Secure' : ''}`
   }
   private rate(req: IncomingMessage): boolean {
     const claim = req.url?.startsWith('/rc/pair/claim') === true
@@ -118,7 +121,9 @@ export class Gateway {
       else json(res, 403, { error: '设备尚未配对或授权已撤销。', code: 'unpaired' })
       req.resume(); return
     }
-    if (!sameOrigin(req)) { json(res, 403, { error: '拒绝跨站请求。' }); return }
+    // Arriving from elsewhere may only open the app page itself; that reads nothing and changes nothing.
+    const opening = req.method === 'GET' && req.headers['sec-fetch-mode'] === 'navigate' && req.headers['sec-fetch-dest'] === 'document' && (url.pathname === '/' || url.pathname === '/index.html')
+    if (!sameOrigin(req) && !opening) { json(res, 403, { error: '拒绝跨站请求。' }); return }
     // Renew the browser expiry along with the durable 30-day idle authorization.
     res.setHeader('set-cookie', this.cookieHeader(req, cookie(req)!))
     const untrack = this.track(device.id, () => { req.destroy(); res.destroy() }); res.once('close', untrack)
