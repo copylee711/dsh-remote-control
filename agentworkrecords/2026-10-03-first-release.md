@@ -20,6 +20,6 @@
 
 npm whoami 已确认账号 copylee，包名 @copylee/dsh-remote-control，首版 0.1.0。实现通过功能分支快进合并到 main，提交 e5f736e 已推送。
 
-首次本地 npm publish --access public 返回成功。公开 tarball 下载返回 HTTP 200，解包确认为 @copylee/dsh-remote-control@0.1.0，19 个文件，SHA-1 为 1a905d02298a10b7988125abc3f04f6b9eb270bf，与发布输出一致。发布后 registry 包元信息出现短暂 404，继续检查传播状态。
+首次本地 npm publish --access public 返回成功。公开 tarball 下载返回 HTTP 200，解包确认为 @copylee/dsh-remote-control@0.1.0，19 个文件，SHA-1 为 1a905d02298a10b7988125abc3f04f6b9eb270bf，与发布输出一致。发布后 registry 包元信息出现约 5 分钟的短暂 404，随后 npm view --prefer-online 确认 version 和 latest 均为 0.1.0。
 
 GitHub CI 37104616369 的 ubuntu-latest 和 windows-latest 均通过类型检查、21 项测试、构建及 npm pack。发布工作流和 Trusted Publisher 字段已写入 README，OIDC 配置由用户在首次发布之后完成。
