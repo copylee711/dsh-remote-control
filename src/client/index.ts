@@ -3,7 +3,7 @@ import { CSS } from './style.js'
 const h = React.createElement
 const ROUTE = '/api/dsh-remote-control/manage'
 interface Status {
-  enabled: boolean; busy: boolean; mode: 'public' | 'lan' | 'fixed'; autoStart: boolean; proxyConfigured: boolean
+  enabled: boolean; busy: boolean; mode: 'public' | 'lan' | 'fixed'; activeMode?: 'public' | 'lan' | 'fixed'; autoStart: boolean; proxyConfigured: boolean
   phase: string; error?: string; gatewayPort: number; local: boolean; expiresAt?: number; qr?: string
   links: Array<{ base: string; url?: string }>; requests: Array<{ id: string; name: string; expiresAt: number }>
   devices: Array<{ id: string; name: string; lastSeenAt: number; online: boolean }>; fixedReason: string; lanHint: string
@@ -12,7 +12,7 @@ interface ClientContext {
   effect(run: () => void | (() => void), label?: string): void
   slots: { inject(name: string, setup: () => unknown): void; register(meta: Record<string, unknown>, render: (props: any) => unknown): unknown }
 }
-async function command(input: Record<string, unknown>): Promise<Status> {
+export async function command(input: Record<string, unknown>): Promise<Status> {
   const transport = (globalThis as unknown as { __DSH_TRANSPORT__?: { fetch?: typeof fetch } }).__DSH_TRANSPORT__?.fetch ?? fetch
   const response = await transport(ROUTE, { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify(input) })
   const data = await response.json()
@@ -45,6 +45,7 @@ export function RemoteControlPanel(): React.ReactElement {
     try {
       const data = await command({ action, ...fields })
       if (data.links) setState(data)
+      else if (action === 'switch') { setNotice('已提交切换，当前访问即将断开。请使用新入口重新连接。') }
       else if (action === 'stop') { setState(previous => previous ? { ...previous, enabled: false, phase: 'off', links: [], qr: undefined } : previous); setNotice('远程连接已关闭，设备授权保留。') }
       else { setNotice('操作已提交。'); setTimeout(() => { void refresh() }, 200) }
       setError('')
@@ -60,20 +61,21 @@ export function RemoteControlPanel(): React.ReactElement {
   const firstURL = state?.links[0]?.url
   const button = (label: string, action: string, fields?: Record<string, unknown>, extra = '') => h('button', { type: 'button', className: `dsrc-button ${extra}`, disabled, onClick: () => { void act(action, fields) } }, label)
   return h('div', { className: 'dsrc', 'data-dsh-plugin': 'dsh-remote-control' },
-    h('header', { className: 'dsrc-head' }, h('div', null, h('div', { className: 'dsrc-eyebrow' }, 'YOUR WORK, WITH YOU'), h('h2', null, '远程控制'), h('p', { className: 'dsrc-sub' }, '离开电脑，也能接着做。扫码后在本机确认连接。')),
+    h('header', { className: 'dsrc-head' }, h('div', null, h('h2', null, '远程控制'), h('p', { className: 'dsrc-sub' }, '扫码后在本机确认连接，继续会话与审批。')),
       h('span', { className: 'dsrc-badge', 'data-ready': state?.phase === 'ready' }, h('span', { className: 'dsrc-dot' }), phaseLabels[state?.phase ?? 'off'] ?? '读取状态')),
     h('section', { className: 'dsrc-surface' },
       h('div', { className: 'dsrc-row' }, h('h3', null, '连接方式'), h('span', { className: 'dsrc-muted' }, state?.mode === 'lan' ? '同一 Wi-Fi' : '免费临时地址')),
       h('div', { className: 'dsrc-mode', role: 'group', 'aria-label': '连接方式' },
         ...([['public', '临时公网'], ['lan', '局域网'], ['fixed', '固定入口 · 暂不可用']] as const).map(([mode, label]) => h('button', { key: mode, type: 'button', 'aria-pressed': state?.mode === mode, disabled: disabled || mode === 'fixed', title: mode === 'fixed' ? state?.fixedReason : undefined, onClick: () => { void act('preferences', { mode }) } }, label))),
       h('p', { className: 'dsrc-note' }, state?.mode === 'lan' ? state.lanHint : '无需账号或域名。临时地址可能变化，换地址后需要重新扫码。固定入口待免费服务验证通过后提供。'),
-      h('div', { className: 'dsrc-actions' }, state?.enabled ? button('关闭连接', 'stop') : button('开启远程连接', 'start', {}, 'dsrc-primary'), state?.phase === 'error' ? button('重新连接', 'start', {}, 'dsrc-primary') : null),
+      state?.enabled ? h('p', { className: 'dsrc-note' }, '当前连接：', state.activeMode === 'lan' ? '局域网' : '临时公网', state.mode !== state.activeMode ? ` · 待切换：${state.mode === 'lan' ? '局域网' : '临时公网'}。切换会断开当前访问，请使用新入口重新连接。` : '') : null,
+      h('div', { className: 'dsrc-actions' }, state?.enabled ? button('关闭连接', 'stop') : button('开启远程连接', 'start', {}, 'dsrc-primary'), state?.enabled && state.mode !== state.activeMode ? button(`切换到${state.mode === 'lan' ? '局域网' : '临时公网'}`, 'switch', {}, 'dsrc-primary') : null, state?.phase === 'error' && state.enabled ? button('重新连接', 'switch', {}, 'dsrc-primary') : null),
       h('label', { className: 'dsrc-toggle' }, h('input', { type: 'checkbox', checked: state?.autoStart ?? false, disabled, onChange: (event: React.ChangeEvent<HTMLInputElement>) => { void act('preferences', { autoStart: event.target.checked }) } }), '随 DSH 启动，自动开启所选连接方式'),
       state?.mode !== 'lan' ? h('details', { className: 'dsrc-proxy' }, h('summary', null, state?.proxyConfigured ? '电脑端代理 · 已配置' : '电脑端代理（可选）'), h('div', { className: 'dsrc-input' }, h('input', { 'aria-label': '电脑端代理地址', placeholder: 'http://127.0.0.1:7890', value: proxy, onChange: (event: React.ChangeEvent<HTMLInputElement>) => setProxy(event.target.value) }), button('保存代理', 'preferences', { proxy })), h('p', { className: 'dsrc-note' }, '留空使用已有环境代理。保存后重新连接生效，手机仍通过普通网络访问。开启穿透会下载并运行 Cloudflare 连接组件。')) : null,
     ),
     h('section', { className: 'dsrc-surface' }, h('div', { className: 'dsrc-row' }, h('h3', null, '扫码配对'), h('span', { className: 'dsrc-muted' }, expired ? '二维码已过期' : firstURL ? '5 分钟有效' : '等待连接就绪')),
       h('div', { className: 'dsrc-pair' }, h('div', { className: 'dsrc-code' }, state?.qr && !expired ? h('img', { src: state.qr, alt: '远程控制配对二维码' }) : h('div', { className: 'dsrc-placeholder' }, expired ? '点击刷新二维码' : '连接就绪后\n二维码会显示在这里')),
-        h('div', { className: 'dsrc-steps' }, ...['开启连接并用手机扫码', '在本机面板确认配对请求', '进入官方界面，继续会话和审批'].map((step, i) => h('div', { className: 'dsrc-step', key: step }, h('span', { className: 'dsrc-number' }, String(i + 1).padStart(2, '0')), h('span', null, step))), h('p', { className: 'dsrc-muted' }, '配对设备与本机同权，可以管理设置、凭据和插件。'))),
+        h('div', { className: 'dsrc-steps' }, ...['开启连接并用手机扫码', '在本机面板确认配对请求', '进入远程界面，继续会话和审批'].map((step, i) => h('div', { className: 'dsrc-step', key: step }, h('span', { className: 'dsrc-number' }, String(i + 1).padStart(2, '0')), h('span', null, step))), h('p', { className: 'dsrc-muted' }, '配对设备与本机同权，可以管理设置、凭据和插件。'))),
       firstURL ? h('div', { className: 'dsrc-link' }, firstURL) : null,
       h('div', { className: 'dsrc-actions' }, h('button', { type: 'button', className: 'dsrc-button', disabled: !firstURL || expired, onClick: () => { if (firstURL) void copy(firstURL) } }, '复制链接'), h('button', { type: 'button', className: 'dsrc-button', disabled: !state?.enabled || disabled, onClick: () => { void act('refresh') } }, '刷新二维码')),
       state?.links && state.links.length > 1 ? h('p', { className: 'dsrc-note' }, '其他网卡地址：', ...state.links.slice(1).map(link => h('span', { key: link.base }, ' ', h('button', { type: 'button', className: 'dsrc-button', onClick: () => { if (link.url) void copy(link.url) } }, link.base)))) : null,
@@ -100,3 +102,4 @@ export function apply(ctx: ClientContext): void {
   ctx.slots.inject('settings.section', () => ctx.slots.register({ name: 'settings.section', id: 'copylee-remote-control', order: 65, label: () => '远程控制' }, () => h(RemoteControlPanel)))
   ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({ name: 'sidebar.footer.action', id: 'copylee-remote-control', order: 65 }, () => h(SidebarEntry)))
 }
+

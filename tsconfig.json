@@ -1,4 +1,4 @@
 {
   "compilerOptions": { "target": "ES2024", "module": "NodeNext", "moduleResolution": "NodeNext", "lib": ["ES2024", "DOM", "DOM.Iterable"], "types": ["node", "react"], "strict": true, "noUncheckedIndexedAccess": true, "verbatimModuleSyntax": true, "resolveJsonModule": true, "rootDir": "src", "outDir": "lib/types", "declaration": true, "skipLibCheck": true },
-  "include": ["src/**/*.ts"], "exclude": ["lib", "tests"]
+  "include": ["src/**/*.ts", "src/**/*.tsx"], "exclude": ["lib", "tests"]
 }

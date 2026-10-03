@@ -8,6 +8,7 @@ import { dirname, extname, join, resolve, sep } from 'node:path'
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
+import { fileURLToPath } from 'node:url'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import QRCode from 'qrcode'
 import { PairingService } from './pairing.js'
@@ -54,6 +55,8 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   let gateway: Gateway | undefined
   let tunnel: TunnelManager | undefined
   let enabled = false, busy = false, disposed = false
+  let activeMode: Mode | undefined
+  let generation = 0
   let error: string | undefined
   let qr: { token: string; expiresAt: number } | undefined
   const pairing = new PairingService({ file: join(storage, 'devices.json'), onRevoke: id => gateway?.revoke(id) })
@@ -68,8 +71,14 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     let credential = hostCookie(ready.connection, upstreamPort)
     const require = createRequire(import.meta.url)
     const distRoot = join(dirname(require.resolve('@deepseek-ai/dsh-web-frontend/package.json')), 'dist')
-    const renderIndex = async () => ready.webServer.renderIndex(await readFile(join(distRoot, 'index.html'), 'utf8'))
+    const renderIndex = async () => ready.webServer.renderIndex((await readFile(join(distRoot, 'index.html'), 'utf8')).replace(/<script type="module"[^>]*src="[^"]+"[^>]*><\/script>/, '<script type="module" src="/rc-assets/remote.js"></script><link rel="stylesheet" href="/rc-assets/style.css">').replace('<title>DeepSeek Harness</title>', '<title>DSH · 远程</title>'))
     const asset = async (pathname: string, res: ServerResponse): Promise<boolean> => {
+      if (pathname.startsWith('/rc-assets/')) {
+        const path = resolve(dirname(fileURLToPath(import.meta.url)), '.' + pathname.replace('/rc-assets/', '/'))
+        if (!/^\/rc-assets\/[a-zA-Z0-9_.-]+\.(js|css|woff2?|ttf)$/.test(pathname)) { res.writeHead(404).end(); return true }
+        try { const data = await readFile(path); res.writeHead(200, { 'content-type': mime[extname(path)] ?? 'application/octet-stream', 'cache-control': 'private, max-age=3600' }); res.end(data) } catch { res.writeHead(404).end() }
+        return true
+      }
       if (!pathname.startsWith('/assets/') && !['/favicon.svg', '/favicon-dark.svg', '/manifest.webmanifest'].includes(pathname)) return false
       const path = resolve(distRoot, `.${decodeURIComponent(pathname)}`)
       if (!path.startsWith(resolve(distRoot) + sep)) { res.writeHead(403).end(); return true }
@@ -78,13 +87,13 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
       return true
     }
     const lanAddresses = () => Object.values(networkInterfaces()).flatMap(rows => rows ?? []).filter(row => row.family === 'IPv4' && !row.internal).map(row => row.address)
-    const baseURLs = () => !enabled || !gateway ? [] : preferences.mode === 'public' ? (tunnel?.phase === 'ready' && tunnel.url ? [tunnel.url] : []) : lanAddresses().map(ip => `http://${ip}:${gateway!.port}`)
+    const baseURLs = () => !enabled || !gateway ? [] : activeMode === 'public' ? (tunnel?.phase === 'ready' && tunnel.url ? [tunnel.url] : []) : lanAddresses().map(ip => `http://${ip}:${gateway!.port}`)
     const status = async (local: boolean) => {
       const links = baseURLs().map(base => ({ base, url: qr ? `${base}/pair#pair=${qr.token}` : undefined }))
       const active = new Set(gateway?.onlineIds() ?? [])
       return {
-        enabled, busy, mode: preferences.mode, autoStart: preferences.autoStart, proxyConfigured: !!preferences.proxy,
-        phase: enabled ? preferences.mode === 'public' ? tunnel?.phase ?? 'starting' : 'ready' : 'off',
+        enabled, busy, mode: preferences.mode, activeMode, autoStart: preferences.autoStart, proxyConfigured: !!preferences.proxy,
+        phase: enabled ? activeMode === 'public' ? tunnel?.phase ?? 'starting' : 'ready' : error ? 'error' : 'off',
         error: error ?? tunnel?.error, gatewayPort: gateway?.port ?? 0, local,
         expiresAt: qr?.expiresAt, links, qr: links[0]?.url ? await QRCode.toDataURL(links[0].url, { width: 260, margin: 2, errorCorrectionLevel: 'M' }) : undefined,
         requests: local ? pairing.requests() : [], devices: pairing.list().map(device => ({ ...device, online: active.has(device.id) })),
@@ -93,32 +102,60 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
       }
     }
     const stop = async () => {
-      enabled = false; qr = undefined; pairing.invalidate()
-      const current = gateway; gateway = undefined
-      await Promise.allSettled([tunnel?.stop(), current?.close()]); tunnel = undefined
+      ++generation
+      enabled = false; activeMode = undefined; qr = undefined; pairing.invalidate()
+      const current = gateway, currentTunnel = tunnel; gateway = undefined; tunnel = undefined
+      await Promise.allSettled([currentTunnel?.stop(), current?.close()])
     }
     shutdown = stop
     const start = async () => {
       if (busy) throw new Error('连接操作正在进行，请稍后再试。')
       if (preferences.mode === 'fixed') throw new Error('固定入口暂不可用，请选择临时公网或局域网。')
       busy = true; error = undefined
+      let ticket: number | undefined
       try {
-        await stop(); if (disposed) return
+        const mode = preferences.mode, proxy = preferences.proxy
+        const stopping = stop(); ticket = generation
+        await stopping; if (disposed || ticket !== generation) return
         credential = hostCookie(ready.connection, upstreamPort)
         const next = gateway = new Gateway({ pairing, upstreamPort, upstreamCookie: () => credential, manage, index: renderIndex, asset })
-        await next.listen(preferences.mode === 'lan' ? '0.0.0.0' : '127.0.0.1', config.gatewayPort ?? 0)
-        if (disposed) { await stop(); return }
+        await next.listen(mode === 'lan' ? '0.0.0.0' : '127.0.0.1', config.gatewayPort ?? 0)
+        if (disposed || ticket !== generation) { await next.close(); return }
         for (const address of lanAddresses()) next.allowAuthority(`${address}:${next.port}`)
-        enabled = true; qr = pairing.issue()
-        if (preferences.mode === 'public') { tunnel = new TunnelManager(next); await tunnel.start(preferences.proxy) }
-      } catch (failure) { error = failure instanceof Error ? failure.message : '启动失败。'; await stop(); throw failure }
+        enabled = true; activeMode = mode; qr = pairing.issue()
+        if (mode === 'public') {
+          const currentTunnel = tunnel = new TunnelManager(next, message => {
+            if (ticket === generation && tunnel === currentTunnel) { error = message; void stop() }
+          }); await currentTunnel.start(proxy)
+          if (disposed || ticket !== generation) await currentTunnel.stop()
+        }
+      } catch (failure) { if (ticket === generation) { error = failure instanceof Error ? failure.message : '启动失败。'; await stop() }; throw failure }
       finally { busy = false }
     }
     async function manage(input: Record<string, unknown>, local: boolean): Promise<unknown> {
       switch (input.action) {
         case 'status': return status(local)
-        case 'start': await start(); return status(local)
-        case 'stop': setTimeout(() => { void stop() }, 75); return { stopped: true }
+        case 'scheduleCapabilities': return { available: !!ready.get('schedule') }
+        case 'scheduleCreate': {
+          const service = ready.get('schedule') as { create(sessionId: string, request: unknown): Promise<unknown> } | undefined
+          if (!service) throw new Error('此宿主尚未启用自动化服务。请在插件管理中启用实验性自动化插件。')
+          if (typeof input.sessionId !== 'string' || !input.request || typeof input.request !== 'object') throw new Error('自动化请求格式不正确。')
+          // rc.2 exposes list/update/delete over Remote but no create RPC.
+          // Delegate directly to the existing Host service, retaining its validation,
+          // persistence and scheduling semantics; no second task database.
+          return service.create(input.sessionId, input.request)
+        }
+        case 'start': if (!enabled) await start(); return status(local)
+        case 'switch': {
+          if (busy) throw new Error('连接操作正在进行，请稍后再试。')
+          if (preferences.mode === activeMode && enabled && (activeMode === 'lan' || tunnel?.phase === 'ready')) return status(local)
+          if (local) { await start(); return status(local) }
+          busy = true
+          const ticket = generation
+          setTimeout(() => { busy = false; if (!disposed && ticket === generation) void start().catch(() => {}) }, 75)
+          return { switching: true, mode: preferences.mode }
+        }
+        case 'stop': if (local) await stop(); else { ++generation; setTimeout(() => { void stop() }, 75) }; return { stopped: true }
         case 'refresh': if (!enabled) throw new Error('请先开启远程连接。'); qr = pairing.issue(); return status(local)
         case 'approve': if (!local) throw new Error('首次配对必须在本机确认。'); pairing.approve(String(input.id)); return status(local)
         case 'reject': if (!local) throw new Error('配对请求由本机处理。'); pairing.reject(String(input.id)); return status(local)
@@ -139,7 +176,6 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
             if (value) { const url = new URL(value); if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error('代理需为不带用户名和密码的 HTTP(S) 地址。'); }
             next.proxy = value || undefined
           }
-          if (next.mode !== preferences.mode && enabled) await stop()
           const previous = preferences; preferences = next
           try { savePreferences() } catch (failure) { preferences = previous; throw failure }
           return status(local)

@@ -8,10 +8,10 @@ function remoteBoot(): void {
   function disconnected(message: string): void {
     if (document.getElementById('dsh-rc-disconnected')) return
     const notice = document.createElement('div'); notice.id = 'dsh-rc-disconnected'; notice.setAttribute('role', 'alert')
-    notice.style.cssText = 'position:fixed;inset:0;z-index:2147483647;background:rgba(255,255,255,.97);display:flex;align-items:center;justify-content:center;padding:24px;font:16px/1.7 system-ui,sans-serif;text-align:center;color:#263d32'
+    notice.style.cssText = 'position:fixed;inset:0;z-index:2147483647;background:rgba(255,255,255,.97);display:flex;align-items:center;justify-content:center;padding:24px;font:16px/1.7 system-ui,sans-serif;text-align:center;color:#292724'
     const box = document.createElement('div'), text = document.createElement('p'), retry = document.createElement('button')
     text.textContent = message; retry.textContent = '重新连接'; retry.onclick = () => location.reload()
-    retry.style.cssText = 'padding:12px 20px;border:0;border-radius:10px;background:#356d53;color:white;font:inherit'
+    retry.style.cssText = 'padding:12px 20px;border:0;border-radius:10px;background:#D97757;color:white;font:inherit'
     box.append(text, retry); notice.append(box); (document.body ?? document.documentElement).append(notice)
   }
   window.fetch = async (...args) => {
@@ -23,10 +23,11 @@ function remoteBoot(): void {
   globals.WebSocket = class extends OriginalSocket {
     constructor(url: string | URL, protocols?: string | string[]) {
       super(url, protocols)
+      this.addEventListener('open', () => window.dispatchEvent(new Event('dsh-rc-online')))
       this.addEventListener('close', () => {
         void originalFetch('/api/dsh-remote-control/manage', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'status' }) }).then(response => {
           if (response.status === 403) disconnected('设备授权已撤销，远程连接已断开。请重新扫码。')
-        }).catch(() => disconnected('远程连接已中断。请检查网络或在电脑上重新开启连接。'))
+        }).catch(() => window.dispatchEvent(new Event('dsh-rc-offline')))
       })
     }
   }
@@ -110,3 +111,4 @@ html.dsh-rc-app{min-height:100%;overscroll-behavior:none}
 export function injectBoot(html: string): string {
   return html.replace(/<head(?:\s[^>]*)?>/i, match => `${match}<script>${BOOT_SCRIPT.replace(/<\/script/gi, '<\\/script')}</script><style>${MOBILE_CSS}</style>`)
 }
+

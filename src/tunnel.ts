@@ -17,7 +17,7 @@ export class TunnelManager {
   private checking = false
   private lastFailure = ''
   private proxy?: ProxyAgent
-  constructor(private readonly gateway: Gateway) {}
+  constructor(private readonly gateway: Gateway, private readonly onFailure?: (message: string) => void) {}
   async start(proxy?: string): Promise<void> {
     await this.stop()
     this.proxy = proxy ? new ProxyAgent(proxy) : undefined
@@ -77,6 +77,7 @@ export class TunnelManager {
     const child = this.child; this.child = undefined
     void this.proxy?.destroy(); this.proxy = undefined
     void this.closeChild(child)
+    this.onFailure?.(message)
   }
   private async closeChild(child: ChildProcess | undefined): Promise<void> {
     if (!child || child.exitCode !== null || child.signalCode !== null) return
