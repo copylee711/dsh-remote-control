@@ -3,7 +3,7 @@ import type { IncomingMessage, Server, ServerResponse, ClientRequest } from 'nod
 import { randomBytes } from 'node:crypto'
 import { StringDecoder } from 'node:string_decoder'
 import type { Duplex } from 'node:stream'
-import { WebSocket, WebSocketServer } from 'ws'
+import type { WebSocket, WebSocketServer } from 'ws'
 import type { PairingService, Device } from './pairing.js'
 import { body, cookie, gzipFor, json, sameOrigin } from './http.js'
 import { constants, createGzip } from 'node:zlib'
@@ -37,12 +37,17 @@ export function safePath(path: string): boolean {
   } catch { return false }
 }
 
+/** `WebSocket.OPEN`, without needing the class at hand. */
+const OPEN = 1
+
 /** Authenticates every remote request before the privileged loopback leg. */
 export class Gateway {
   private server?: Server
   private readonly sockets = new Set<Duplex>()
   private readonly active = new Map<string, Set<() => void>>()
-  private readonly wss = new WebSocketServer({ noServer: true, maxPayload: 32 * 1024 * 1024, perMessageDeflate: false })
+  // `ws` is loaded when the gateway is opened, not when the plugin is: most Host starts never open one.
+  private ws!: typeof import('ws')
+  private wss!: WebSocketServer
   private readonly rates = new Map<string, { count: number; until: number }>()
   private readonly authorities = new Set<string>()
   private readonly proof = randomBytes(24).toString('hex')
@@ -57,6 +62,8 @@ export class Gateway {
   }
   async listen(host: '127.0.0.1' | '0.0.0.0', port = 0): Promise<number> {
     if (this.server) throw new Error('远程网关已启动。')
+    this.ws ??= await import('ws')
+    this.wss ??= new this.ws.WebSocketServer({ noServer: true, maxPayload: 32 * 1024 * 1024, perMessageDeflate: false })
     const server = this.server = createServer((req, res) => { void this.handle(req, res).catch(() => { if (!res.headersSent) json(res, 500, { error: '请求处理失败，请在本机查看状态。' }); else res.destroy() }) })
     server.on('connection', socket => { this.sockets.add(socket); socket.on('error', () => {}); socket.once('close', () => this.sockets.delete(socket)) })
     server.on('upgrade', (req, socket, head) => { socket.on('error', () => {}); void this.upgrade(req, socket, head).catch(() => socket.destroy()) })
@@ -187,7 +194,7 @@ export class Gateway {
     // Only registered Host WS routes are reachable; no port or destination supplied by clients.
     const headers = this.headers(req); delete headers['sec-websocket-protocol']
     const protocols = req.headers['sec-websocket-protocol']?.split(',').map(p => p.trim()) ?? []
-    const upstream = new WebSocket(`ws://127.0.0.1:${this.options.upstreamPort}${url.pathname}${url.search}`, protocols, { headers, maxPayload: 32 * 1024 * 1024, perMessageDeflate: false })
+    const upstream = new this.ws.WebSocket(`ws://127.0.0.1:${this.options.upstreamPort}${url.pathname}${url.search}`, protocols, { headers, maxPayload: 32 * 1024 * 1024, perMessageDeflate: false })
     const release = this.track(device.id, () => { upstream.terminate(); socket.destroy() })
     socket.once('close', () => { upstream.terminate(); release() })
     upstream.on('error', () => socket.destroy())
@@ -198,14 +205,14 @@ export class Gateway {
         const heartbeat = setInterval(() => { if (!alive || !this.device(req)) { ws.terminate(); upstream.terminate(); return }; alive = false; ws.ping() }, 30000)
         heartbeat.unref(); ws.on('pong', () => { alive = true })
         const send = (destination: WebSocket, data: Buffer, binary: boolean) => {
-          if (destination.readyState !== WebSocket.OPEN || destination.bufferedAmount > 8 * 1024 * 1024) { ws.terminate(); upstream.terminate(); return }
+          if (destination.readyState !== OPEN || destination.bufferedAmount > 8 * 1024 * 1024) { ws.terminate(); upstream.terminate(); return }
           destination.send(data, { binary })
         }
         ws.on('message', (data, binary) => send(upstream, data as Buffer, binary))
         upstream.on('message', (data, binary) => send(ws, data as Buffer, binary))
         ws.on('error', () => upstream.terminate())
         ws.once('close', () => { clearInterval(heartbeat); upstream.terminate(); release() })
-        upstream.once('close', (code, reason) => { if (ws.readyState === WebSocket.OPEN) ws.close(code === 1006 ? 1011 : code, reason) })
+        upstream.once('close', (code, reason) => { if (ws.readyState === OPEN) ws.close(code === 1006 ? 1011 : code, reason) })
       })
     })
   }
@@ -217,23 +224,23 @@ export class Gateway {
       if (response.statusCode !== 200 || !response.headers['content-type']?.includes('text/event-stream')) { ws.send(JSON.stringify({ type: 'error' })); response.destroy(); ws.close(); return }
       ws.send(JSON.stringify({ type: 'ready' }))
       response.on('data', chunk => {
-        if (ws.readyState !== WebSocket.OPEN || ws.bufferedAmount > 1024 * 1024) { upstream.destroy(); ws.terminate(); return }
+        if (ws.readyState !== OPEN || ws.bufferedAmount > 1024 * 1024) { upstream.destroy(); ws.terminate(); return }
         ws.send(JSON.stringify({ type: 'chunk', data: decoder.write(chunk) }))
       })
-      response.once('end', () => { const tail = decoder.end(); if (tail && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'chunk', data: tail })); ws.close() })
+      response.once('end', () => { const tail = decoder.end(); if (tail && ws.readyState === OPEN) ws.send(JSON.stringify({ type: 'chunk', data: tail })); ws.close() })
       response.once('error', () => ws.terminate())
       ws.once('close', () => response.destroy())
     })
     const release = this.track(deviceId, () => { upstream.destroy(); ws.terminate() })
     let alive = true; ws.on('pong', () => { alive = true })
-    const ping = setInterval(() => { if (!alive || !this.device(req)) { upstream.destroy(); ws.terminate(); return }; alive = false; if (ws.readyState === WebSocket.OPEN) ws.ping() }, 30000); ping.unref()
+    const ping = setInterval(() => { if (!alive || !this.device(req)) { upstream.destroy(); ws.terminate(); return }; alive = false; if (ws.readyState === OPEN) ws.ping() }, 30000); ping.unref()
     ws.once('close', () => { clearInterval(ping); upstream.destroy(); release() })
     ws.on('error', () => upstream.destroy()); upstream.on('error', () => ws.close(1011, 'Host unavailable')); upstream.end()
   }
   async close(): Promise<void> {
     for (const id of [...this.active.keys()]) this.revoke(id)
     for (const socket of this.sockets) socket.destroy()
-    for (const socket of this.wss.clients) socket.terminate()
+    for (const socket of this.wss?.clients ?? []) socket.terminate()
     const server = this.server; this.server = undefined
     if (server) await new Promise<void>(resolve => server.close(() => resolve()))
     this.port = 0; this.authorities.clear()
