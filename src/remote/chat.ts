@@ -85,18 +85,51 @@ function BoundChat({ ctx, binding, sessionId, onSession }: { ctx: Host; binding:
   const modelOptions = (models.data?.groups ?? []).flatMap((provider: Host) => (provider.models ?? []).map((m: Host) => ({ provider: provider.id, providerName: provider.name || provider.label || provider.id, model: m.id ?? m.model, name: m.name ?? m.id ?? m.model, reasoning: m.reasoning })))
   const currentModel = modelOptions.find((m: Host) => `${m.provider}/${m.model}` === model)
   const trace = view === 'trace'
-  const messages = content.nodes.map((node: Host) => {
-    if (node.kind === 'user' || node.kind === 'steering') return h('article', { key: node.seq, className: 'rc-message user' }, h(Blocks, { ctx, sessionId, blocks: node.content }))
-    if (node.kind === 'assistant') return h('article', { key: node.seq, className: 'rc-message assistant' },
-      h(Blocks, { ctx, sessionId, blocks: node.blocks }),
-      node.interrupted ? h('div', { className: 'rc-message-label' }, '已停止') : null)
-    if (node.kind === 'tool-result') return h('details', { key: node.seq, className: 'rc-tool-event', open: trace },
-      h('summary', null, `${node.call?.name || node.callId}${node.isError ? ' · 失败' : ''}`),
-      h('pre', null, node.call?.argsRaw), h(Blocks, { ctx, sessionId, blocks: node.content }))
-    if (node.kind === 'turn-error') return h('div', { key: node.seq, className: 'rc-error' }, node.message || node.code)
-    if (trace) return h('details', { key: node.seq, className: 'rc-tool-event' }, h('summary', null, node.kind), h('pre', null, JSON.stringify(node, null, 2)))
-    return null
-  })
+  // What the agent did between its replies (thinking, tool calls) is folded into one line per run,
+  // so a long task reads as its replies, not as a column of tool names.
+  type Step = { key: string; name: string; body: React.ReactNode }
+  const messages: React.ReactNode[] = []
+  let steps: Step[] = []
+  const flush = () => {
+    if (!steps.length) return
+    const counts = new Map<string, number>()
+    for (const step of steps) counts.set(step.name, (counts.get(step.name) ?? 0) + 1)
+    const summary = [...counts].map(([name, count]) => count > 1 ? `${name} ×${count}` : name).join('、')
+    messages.push(h('details', { key: `steps:${steps[0]!.key}`, className: 'rc-steps', open: trace },
+      h('summary', null, h('span', { className: 'rc-steps-count' }, `${steps.length} 步`), h('span', { className: 'rc-steps-names' }, summary)),
+      ...steps.map(step => h('details', { key: step.key, className: 'rc-tool-event' }, h('summary', null, step.name), step.body))))
+    steps = []
+  }
+  const say = (key: string, blocks: Host[], interrupted = false) => {
+    if (!blocks.length && !interrupted) return
+    flush()
+    messages.push(h('article', { key, className: 'rc-message assistant' },
+      h(Blocks, { ctx, sessionId, blocks }), interrupted ? h('div', { className: 'rc-message-label' }, '已停止') : null))
+  }
+  for (const node of content.nodes as Host[]) {
+    if (node.kind === 'user' || node.kind === 'steering') {
+      flush(); messages.push(h('article', { key: node.seq, className: 'rc-message user' }, h(Blocks, { ctx, sessionId, blocks: node.content })))
+    } else if (node.kind === 'assistant') {
+      let spoken: Host[] = [], part = 0
+      for (const [index, block] of (node.blocks as Host[] ?? []).entries()) {
+        const kind = block.kind ?? block.type
+        if (kind === 'reasoning' || kind === 'thinking') {
+          say(`${node.seq}:${part++}`, spoken); spoken = []
+          steps.push({ key: `${node.seq}:r${index}`, name: '思考', body: h(Markdown, { text: block.text || block.thinking || '' }) })
+        } else if (kind === 'tool-call') { say(`${node.seq}:${part++}`, spoken); spoken = [] }   // shown with its result below
+        else spoken.push(block)
+      }
+      say(`${node.seq}:${part}`, spoken, !!node.interrupted)
+    } else if (node.kind === 'tool-result') {
+      steps.push({ key: `t${node.seq}`, name: `${node.call?.name || node.callId}${node.isError ? '（失败）' : ''}`,
+        body: h(React.Fragment, null, node.call?.argsRaw ? h('pre', null, node.call.argsRaw) : null, h(Blocks, { ctx, sessionId, blocks: node.content })) })
+    } else if (node.kind === 'turn-error') {
+      flush(); messages.push(h('div', { key: node.seq, className: 'rc-error' }, node.message || node.code))
+    } else if (trace) {
+      steps.push({ key: `n${node.seq}`, name: String(node.kind), body: h('pre', null, JSON.stringify(node, null, 2)) })
+    }
+  }
+  flush()
   const empty = !content.nodes.length && !content.partial && !(session.pendingSubmissions ?? []).length
 
   const pickModel = (key: string) => {

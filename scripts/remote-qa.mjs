@@ -83,9 +83,9 @@ try {
   writeFileSync('.qa/workspace/deepseek-harness/default-workspace/remote-qa-preview.txt', '文件预览与下载内容验证')
   await page.getByRole('button', { name: '打开会话列表', exact: true }).click(); await page.getByRole('button', { name: '文件与交付物', exact: true }).click()
   const fileCard = page.locator('.rc-card').filter({ hasText: 'remote-qa-preview.txt' })
-  await fileCard.first().getByRole('button', { name: '预览', exact: true }).click(); await page.getByText('文件预览与下载内容验证', { exact: true }).waitFor()
-  const downloaded = page.waitForEvent('download'); await fileCard.first().getByRole('button', { name: '下载', exact: true }).click(); const file = await downloaded
-  expect(readFileSync(await file.path(), 'utf8')).toBe('文件预览与下载内容验证'); check('workspace file list, text preview and binary download content')
+  await page.getByRole('button', { name: '预览 remote-qa-preview.txt', exact: true }).click(); await page.getByText('文件预览与下载内容验证', { exact: true }).waitFor()
+  const downloaded = page.waitForEvent('download'); await page.locator('dialog.rc-preview[open]').getByRole('button', { name: '下载', exact: true }).click(); const file = await downloaded
+  expect(readFileSync(await file.path(), 'utf8')).toBe('文件预览与下载内容验证'); await page.getByRole('button', { name: '关闭预览', exact: true }).click(); check('workspace file list, text preview and binary download content')
   await page.getByRole('button', { name: '返回会话', exact: true }).click()
   const openSettings = async () => { await page.getByRole('button', { name: '打开会话列表', exact: true }).click(); await page.getByRole('button', { name: '设置与管理', exact: true }).click() }
   await page.getByRole('textbox', { name: '消息', exact: true }).waitFor(); await page.waitForTimeout(400); await page.screenshot({ path: '.qa/v020-chat.png' })

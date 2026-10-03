@@ -17,10 +17,12 @@ export interface Device {
 interface Pending { id: string; name: string; host?: string; expiresAt: number; keyHash: string; state: 'pending' | 'approved' | 'rejected'; credential?: string }
 
 /** A name a person can tell devices apart by: model (or system) and browser, from the User-Agent. */
-export function deviceName(userAgent: string): string {
+export function deviceName(userAgent: string, reported?: string): string {
   const system = /iPad/.test(userAgent) ? 'iPad' : /iPhone/.test(userAgent) ? 'iPhone' : /Android/.test(userAgent) ? 'Android' : /Windows/.test(userAgent) ? 'Windows' : /Mac OS X/.test(userAgent) ? 'Mac' : /Linux/.test(userAgent) ? 'Linux' : '远程设备'
   // Chrome's reduced User-Agent reports every Android model as "K".
-  const model = /Android [\d.]+; ([^;)]+?)(?: Build\/[^;)]*)?[;)]/.exec(userAgent)?.[1]?.trim()
+  // The model the browser reports on request (secure pages only) is the real one; printable characters only.
+  const hinted = reported?.replace(/[^\p{L}\p{N} ._()+-]/gu, '').trim()
+  const model = hinted || /Android [\d.]+; ([^;)]+?)(?: Build\/[^;)]*)?[;)]/.exec(userAgent)?.[1]?.trim()
   const browsers: Array<[RegExp, string]> = [
     [/MicroMessenger/, '微信'], [/EdgA?\/|EdgiOS/, 'Edge'], [/Quark/, '夸克'], [/HuaweiBrowser/, '华为浏览器'], [/MiuiBrowser/, '小米浏览器'],
     [/SamsungBrowser/, '三星浏览器'], [/VivoBrowser/, 'vivo 浏览器'], [/HeyTapBrowser/, 'OPPO 浏览器'], [/Firefox|FxiOS/, 'Firefox'],
@@ -77,12 +79,12 @@ export class PairingService {
     return { token, expiresAt }
   }
   invalidate(): void { this.token = undefined; this.pending.clear() }
-  request(token: string, userAgent: string, host?: string): { id: string; key: string; expiresAt: number } {
+  request(token: string, userAgent: string, host?: string, model?: string): { id: string; key: string; expiresAt: number } {
     this.expire()
     if (!this.token || this.now() >= this.token.expiresAt || !matches(token, this.token.hash)) throw new Error('二维码已过期或已刷新，请重新扫码。')
     if (this.pending.size >= 16) throw new Error('等待配对的设备过多，请稍后再试。')
     const id = randomUUID(), key = random(), expiresAt = Math.min(this.now() + 5 * 60_000, this.token.expiresAt)
-    this.pending.set(id, { id, name: deviceName(userAgent), host: host?.toLowerCase(), expiresAt, keyHash: hash(key), state: 'pending' })
+    this.pending.set(id, { id, name: deviceName(userAgent, model), host: host?.toLowerCase(), expiresAt, keyHash: hash(key), state: 'pending' })
     return { id, key, expiresAt }
   }
   requests(): Array<{ id: string; name: string; expiresAt: number }> {

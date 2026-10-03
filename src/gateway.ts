@@ -106,7 +106,7 @@ export class Gateway {
       if (!this.rate(req)) { json(res, 429, { error: '请求过于频繁，请稍后再试。' }); return }
       try {
         const input = await body(req)
-        if (url.pathname.endsWith('/request')) json(res, 200, this.options.pairing.request(String(input.token ?? ''), req.headers['user-agent'] ?? '', req.headers.host))
+        if (url.pathname.endsWith('/request')) json(res, 200, this.options.pairing.request(String(input.token ?? ''), req.headers['user-agent'] ?? '', req.headers.host, typeof input.model === 'string' ? input.model : undefined))
         else {
           const result = this.options.pairing.claim(String(input.id ?? ''), String(input.key ?? ''))
           if (result.credential) res.setHeader('set-cookie', this.cookieHeader(req, result.credential))

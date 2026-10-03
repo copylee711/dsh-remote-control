@@ -5,7 +5,8 @@ export function pairingPage(accent: Accent = 'orange'): string {
   (async()=>{const state=document.getElementById('state');const enter=document.getElementById('enter');
   try{const token=new URLSearchParams(location.hash.slice(1)).get('pair');history.replaceState(null,'','/pair');
     if(!token){const health=await fetch('/api/dsh-remote-control/manage',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'status'})});if(health.ok){location.replace('/');return}throw Error('请在电脑上开启远程控制并扫描新的二维码。')}
-    const request=await fetch('/rc/pair/request',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({token})});const claim=await request.json();if(!request.ok)throw Error(claim.error||'配对请求失败');
+    let model='';try{const hints=await navigator.userAgentData?.getHighEntropyValues(['model']);model=hints?.model||''}catch{}
+    const request=await fetch('/rc/pair/request',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({token,model})});const claim=await request.json();if(!request.ok)throw Error(claim.error||'配对请求失败');
     state.textContent='等待电脑确认，请查看本机远程控制面板';
     while(Date.now()<claim.expiresAt){await new Promise(r=>setTimeout(r,1500));const response=await fetch('/rc/pair/claim',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id:claim.id,key:claim.key})});const result=await response.json();if(!response.ok)throw Error(result.error||'请求已失效');if(result.state==='rejected')throw Error('电脑已拒绝本次配对。');if(result.state==='approved'){state.textContent='已连接，正在打开远程界面…';location.replace('/');return}}
     throw Error('配对请求已过期，请重新扫码。')

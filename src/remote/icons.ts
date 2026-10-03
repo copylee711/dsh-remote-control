@@ -17,6 +17,7 @@ const paths: Record<string, string> = {
   sliders: 'M4 7h9m4 0h3M4 17h3m4 0h9M15 4.5v5M9 14.5v5',
   back: 'M15 5l-7 7 7 7',
   chevron: 'm9 6 6 6-6 6',
+  refresh: 'M20 11a8 8 0 0 0-14.3-4.5M4 4v4h4m-4 5a8 8 0 0 0 14.3 4.5M20 20v-4h-4',
   chevronDown: 'm6 9 6 6 6-6',
   check: 'm5 12 5 5 9-10',
   down: 'M12 5v14m-6-6 6 6 6-6',

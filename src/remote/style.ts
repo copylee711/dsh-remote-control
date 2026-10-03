@@ -110,12 +110,25 @@ input[type=checkbox],input[type=radio]{width:22px;height:22px;padding:0;accent-c
 .rc-message pre{letter-spacing:0;tab-size:2}
 .rc-message [class*=_banner]:not([class*=_bannerWrap]){padding:8px 14px 2px}
 .rc-message [class*=_block] pre{padding:6px 14px 14px}
-.rc-message table{display:block;max-width:100%;overflow-x:auto;border-collapse:collapse}
-.rc-message th,.rc-message td{border:1px solid var(--rc-line);padding:6px 10px}
+.rc-message [class*=_tableScroll]{max-width:100%;overflow-x:auto;margin:14px 0;border:1px solid var(--rc-line);border-radius:14px;background:var(--rc-paper)}
+.rc-message table{width:max-content;min-width:100%;max-width:none;border-collapse:collapse;border-spacing:0;font-size:14px;line-height:1.6;margin:0}
+.rc-message th,.rc-message td{border:0;border-bottom:1px solid var(--rc-line);padding:9px 14px;text-align:left;vertical-align:top;max-width:17em;min-width:4.5em;overflow-wrap:anywhere;word-break:normal;font-size:14px;line-height:1.6}
+.rc-message th{background:var(--rc-soft);font-weight:600;white-space:nowrap}
+.rc-message tbody tr:last-child td{border-bottom:0}
+.rc-message :is(th,td)[align=center]{text-align:center}
+.rc-message :is(th,td)[align=right]{text-align:right}
 .rc-message blockquote{margin:0;padding-left:14px;border-left:3px solid var(--rc-line);color:var(--rc-muted)}
 .rc-message ul,.rc-message ol{padding-left:1.4em}
 .rc-message hr{margin:18px 0}
 .rc-chat svg{max-width:24px}
+.rc-steps{justify-self:start;max-width:100%;min-width:0;color:var(--rc-muted);font-size:14px}
+.rc-steps>summary{display:inline-flex;align-items:center;gap:8px;max-width:100%;cursor:pointer;list-style:none;padding:6px 12px;border-radius:999px;background:var(--rc-soft)}
+.rc-steps>summary::-webkit-details-marker{display:none}
+.rc-steps>summary::after{content:'›';transition:transform .15s}
+.rc-steps[open]>summary::after{transform:rotate(90deg)}
+.rc-steps-count{font-weight:600;color:var(--rc-ink);white-space:nowrap}
+.rc-steps-names{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rc-steps>.rc-tool-event{display:block;margin:8px 0 0 10px;background:transparent;border-left:2px solid var(--rc-line);border-radius:0;padding:2px 0 2px 12px}
 .rc-tool-event{justify-self:start;max-width:100%;min-width:0;border-radius:16px;background:var(--rc-soft);padding:8px 14px;color:var(--rc-muted);font-size:14px}
 .rc-tool-event summary{cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .rc-tool-event[open] summary{margin-bottom:8px}
@@ -175,6 +188,20 @@ input[type=checkbox],input[type=radio]{width:22px;height:22px;padding:0;accent-c
 .rc-list{border-radius:22px;background:var(--rc-paper);box-shadow:var(--rc-shadow);margin:14px 0;overflow:hidden}
 .rc-menu-row{display:flex;justify-content:space-between;align-items:center;width:100%;text-align:left;background:transparent;border-radius:0;padding:16px 18px;font-size:16px}
 .rc-menu-row+.rc-menu-row{border-top:1px solid var(--rc-line)}
+.rc-crumbs{display:flex;align-items:center;gap:6px}
+.rc-crumbs .rc-path{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;direction:rtl;text-align:left}
+.rc-file{display:flex;align-items:center;gap:6px;padding-right:10px}
+.rc-file+.rc-file{border-top:1px solid var(--rc-line)}
+.rc-file>svg{color:var(--rc-muted);margin-right:6px}
+.rc-file-main{flex:1;min-width:0;display:flex;align-items:center;gap:12px;text-align:left;background:transparent;border-radius:0;padding:14px 8px 14px 18px}
+.rc-file-main svg{color:var(--rc-muted)}
+.rc-file-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rc-preview{max-height:86dvh}
+.rc-preview-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:4px 4px 8px 12px;font-weight:600}
+.rc-preview-body{overflow:auto;min-height:120px;padding:0 6px;text-align:center}
+.rc-preview-body pre{text-align:left;white-space:pre-wrap;overflow-wrap:anywhere;padding:12px 14px;background:var(--rc-soft);border-radius:12px;font:13px/1.6 var(--rc-mono)}
+.rc-preview-body img{max-height:62dvh;object-fit:contain}
+.rc-preview-actions{justify-content:flex-end;padding:10px 6px 0}
 .rc-row{display:flex;align-items:center;justify-content:space-between;gap:12px;min-width:0}
 .rc-stack{display:grid;gap:12px}
 .rc-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px}

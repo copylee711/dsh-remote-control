@@ -72,6 +72,8 @@ it('names a device by model or system and browser', () => {
   expect(deviceName('Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36 EdgA/126.0')).toBe('Android · Edge')
   expect(deviceName('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1')).toBe('iPhone · Safari')
   expect(deviceName('')).toBe('远程设备')
+  // The model a browser reports on request wins over the reduced User-Agent.
+  expect(deviceName('Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 Chrome/126.0.0.0 Mobile Safari/537.36', 'V2309A<b>;')).toBe('V2309Ab · Chrome')
 })
 it('records the pairing address, renames, and prunes devices whose address is gone', () => {
   const { service } = fixture()
