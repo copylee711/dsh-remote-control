@@ -11,7 +11,9 @@ const matches = (value: string, expected: string) => {
 export const IDLE_MS = 30 * 24 * 3600_000
 export interface Device { id: string; name: string; createdAt: number; lastSeenAt: number; hash: string }
 interface Pending { id: string; name: string; expiresAt: number; keyHash: string; state: 'pending' | 'approved' | 'rejected'; credential?: string }
-export interface PairingOptions { file: string; now?: () => number; onRevoke?: (id: string) => void; idleMs?: number }
+export interface PairingOptions { file: string; now?: () => number; onRevoke?: (id: string) => void; idleMs?: number; isOnline?: (id: string) => boolean }
+/** Devices kept on record. A temporary public address changes on every start, and each one needs a new pairing. */
+export const MAX_DEVICES = 32
 
 /** Only hashes of device secrets reach disk. Pending claims live in memory. */
 export class PairingService {
@@ -73,7 +75,12 @@ export class PairingService {
     this.expire()
     const claim = this.pending.get(id)
     if (!claim || claim.state !== 'pending') throw new Error('配对请求已失效。')
-    if (this.devices.size >= 32) throw new Error('最多保存 32 台设备，请先撤销不再使用的设备。')
+    if (this.devices.size >= MAX_DEVICES) {
+      // Make room by dropping the device unused for longest, never one that is connected now.
+      const idle = [...this.devices.values()].filter(d => !this.options.isOnline?.(d.id)).sort((a, b) => a.lastSeenAt - b.lastSeenAt)[0]
+      if (!idle) throw new Error(`已有 ${MAX_DEVICES} 台设备在线，请先撤销不再使用的设备。`)
+      this.revoke(idle.id)
+    }
     const deviceId = randomUUID(), secret = random()
     const device: Device = { id: deviceId, name: claim.name, hash: hash(secret), createdAt: this.now(), lastSeenAt: this.now() }
     this.devices.set(deviceId, device)

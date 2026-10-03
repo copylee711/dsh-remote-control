@@ -10,6 +10,8 @@ import { deniedPage, pairingPage } from './pages.js'
 import { injectBoot } from './boot.js'
 
 export const MANAGE_PATH = '/api/dsh-remote-control/manage'
+/** Set by the gateway on every request it forwards; the Host's local-only handlers refuse it. */
+export const REMOTE_MARK = 'x-dsh-rc-remote'
 export interface GatewayOptions {
   pairing: PairingService
   upstreamPort: number
@@ -17,7 +19,9 @@ export interface GatewayOptions {
   manage: (input: Record<string, unknown>, local: boolean) => Promise<unknown>
   /** Render the official Web GUI when the Desktop Host has no HTTP index. */
   index?: () => Promise<string>
-  asset?: (path: string, res: ServerResponse) => Promise<boolean>
+  asset?: (path: string, res: ServerResponse, req: IncomingMessage) => Promise<boolean>
+  /** Addresses this computer can currently be reached at (LAN mode); read on every request, since they change with the network. */
+  addresses?: () => string[]
 }
 export function safePath(path: string): boolean {
   if (!path.startsWith('/') || path.startsWith('//') || /[\x00-\x1f\\]/.test(path)) return false
@@ -42,7 +46,11 @@ export class Gateway {
   constructor(private readonly options: GatewayOptions) {}
   allowAuthority(authority: string): void { this.authorities.add(authority.toLowerCase()) }
   disallowAuthority(authority: string): void { this.authorities.delete(authority.toLowerCase()) }
-  private validHost(req: IncomingMessage): boolean { return !!req.headers.host && this.authorities.has(req.headers.host.toLowerCase()) }
+  private validHost(req: IncomingMessage): boolean {
+    const host = req.headers.host?.toLowerCase()
+    if (!host) return false
+    return this.authorities.has(host) || (this.options.addresses?.().some(address => host === `${address}:${this.port}`) ?? false)
+  }
   async listen(host: '127.0.0.1' | '0.0.0.0', port = 0): Promise<number> {
     if (this.server) throw new Error('远程网关已启动。')
     const server = this.server = createServer((req, res) => { void this.handle(req, res).catch(() => { if (!res.headersSent) json(res, 500, { error: '请求处理失败，请在本机查看状态。' }); else res.destroy() }) })
@@ -121,7 +129,7 @@ export class Gateway {
       const html = injectBoot(await this.options.index())
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'referrer-policy': 'no-referrer' }); res.end(html); return
     }
-    if ((req.method === 'GET' || req.method === 'HEAD') && this.options.asset && await this.options.asset(url.pathname, res)) return
+    if ((req.method === 'GET' || req.method === 'HEAD') && this.options.asset && await this.options.asset(url.pathname, res, req)) return
     this.proxy(req, res, device.id)
   }
   private headers(req: IncomingMessage): Record<string, string | string[]> {
@@ -129,7 +137,7 @@ export class Gateway {
     const blocked = new Set(['host', 'cookie', 'authorization', 'origin', 'referer', 'connection', 'upgrade', 'accept-encoding', 'forwarded', 'sec-fetch-site', 'sec-websocket-key', 'sec-websocket-version', 'sec-websocket-extensions', 'sec-websocket-protocol'])
     for (const [name, value] of Object.entries(req.headers)) if (value !== undefined && !blocked.has(name) && !name.startsWith('x-forwarded') && !name.startsWith('x-dsh')) headers[name] = value
     const host = `127.0.0.1:${this.options.upstreamPort}`
-    return { ...headers, host, cookie: this.options.upstreamCookie(), origin: `http://${host}`, 'sec-fetch-site': 'same-origin', 'accept-encoding': 'identity' }
+    return { ...headers, host, cookie: this.options.upstreamCookie(), [REMOTE_MARK]: '1', origin: `http://${host}`, 'sec-fetch-site': 'same-origin', 'accept-encoding': 'identity' }
   }
   private proxy(req: IncomingMessage, res: ServerResponse, deviceId: string): void {
     let upstream: ClientRequest

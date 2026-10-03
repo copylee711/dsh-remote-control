@@ -1,7 +1,7 @@
 import { ask, confirmAction } from './dialog.js'
 import * as React from 'react'
 import { RemoteControlPanel, command } from '../client/index.js'
-import { useLoad, useAction, useStore, value, label, type Host } from './common.js'
+import { useLoad, useAction, useStore, value, label, Boundary, type Host } from './common.js'
 import { Files } from './files.js'
 import { PluginPage } from './compatibility.js'
 import { fields, namespaces } from './labels.js'
@@ -14,18 +14,21 @@ const categories: Array<[string, string, RegExp]> = [
   ['skills', '技能', /skill/], ['cost', '费用', /cost|usage|billing/],
   ['automation', '自动化', /automation|cron|schedule/], ['advanced', '其他宿主功能', /./],
 ]
+/** A namespace belongs to the first category that claims it; the last one takes what is left. */
+const categoryOf = (ns: string) => categories.find(([, , pattern]) => pattern.test(ns))?.[0]
+const SELF = '@copylee/dsh-remote-control'
 const builtIn = new Set(['general', 'models', 'plugins', 'agent-presets', 'skills', 'cost', 'archive', 'schedule', 'copylee-remote-control'])
-export function Management({ ctx, page, sessionId, onSession }: { ctx: Host; page: string; sessionId?: string; onSession: (id: string) => void }) {
-  const [section, setSection] = React.useState('')
+export function Management({ ctx, page, start = '', sessionId, onSession }: { ctx: Host; page: string; start?: string; sessionId?: string; onSession: (id: string) => void }) {
+  const [section, setSection] = React.useState(start)
   const description = useLoad<Host>(() => ctx.remote.settings.describe().then(value), [ctx])
   const revision = React.useSyncExternalStore((cb: () => void) => ctx.slots.subscribe('settings.section', cb), () => ctx.slots.getVersion('settings.section'))
   const compatible = React.useMemo(() => ctx.slots.entriesOfSlot('settings.section').filter((entry: Host) => !builtIn.has(entry.options.id)), [ctx, revision])
   const selected = compatible.find((entry: Host) => `compat:${entry.options.id}` === section)
   if (page === 'files') return h(Files, { ctx, sessionId })
   return h('div', { className: 'rc-scroll' }, h('div', { className: 'rc-content' },
-    section ? h('button', { onClick: async () => setSection(''), className: 'rc-small' }, '‹ 返回设置分类') : null,
+    section ? h('button', { onClick: async () => setSection(''), className: 'rc-pill rc-small' }, '‹ 返回设置分类') : null,
     description.error ? h('div', { className: 'rc-error' }, description.error, h('button', { onClick: description.reload }, '重试')) : null,
-    !section ? h(React.Fragment, null, h('h2', null, '设置与管理'), h('p', { className: 'rc-muted' }, '所有修改作用于正在连接的电脑。'), h('section', { className: 'rc-card', style: { padding: 0 } },
+    !section ? h(React.Fragment, null, h('p', { className: 'rc-muted' }, '所有修改作用于正在连接的电脑。'), h('section', { className: 'rc-list' },
       ...categories.map(([id, title]) => h('button', { key: id, className: 'rc-menu-row', onClick: async () => setSection(id) }, title, h('span', null, '›'))),
       h('button', { className: 'rc-menu-row', onClick: async () => setSection('plugins') }, '插件与安装任务', h('span', null, '›')),
       h('button', { className: 'rc-menu-row', onClick: async () => setSection('remote') }, '远程连接与设备', h('span', null, '›')),
@@ -38,9 +41,9 @@ export function Management({ ctx, page, sessionId, onSession }: { ctx: Host; pag
       section === 'automation' ? h(Automations, { ctx, sessionId }) : null,
       section === 'cost' ? h(Cost, { ctx, sessionId }) : null,
       section === 'advanced' ? h('p', { className: 'rc-notice' }, '这里列出宿主公开的其他配置。原生窗口、账户浏览器登录和电脑音频设备等操作需要在电脑上完成；未公开远程接口的能力不会显示操作按钮。') : null,
-      ...(description.data?.namespaces ?? []).filter((ns: Host) => categories.find(([id]) => id === section)?.[2].test(ns.ns)).map((ns: Host) => h(NamespaceForm, { key: `${ns.ns}:${ns.revision}`, ctx, namespace: ns, writable: description.data?.writable, onSaved: description.reload })),
+      ...(description.data?.namespaces ?? []).filter((ns: Host) => categoryOf(ns.ns) === section).map((ns: Host) => h(NamespaceForm, { key: `${ns.ns}:${ns.revision}`, ctx, namespace: ns, writable: description.data?.writable, onSaved: description.reload })),
       !description.data ? h('p', { className: 'rc-muted' }, '正在读取设置…') : null,
-      description.data && !(description.data.namespaces ?? []).some((ns: Host) => categories.find(([id]) => id === section)?.[2].test(ns.ns)) ? h('p', { className: 'rc-notice' }, '此宿主没有公开该分类的配置描述；可用能力在上方单独列出。') : null)))
+      description.data && !(description.data.namespaces ?? []).some((ns: Host) => categoryOf(ns.ns) === section) ? h('p', { className: 'rc-notice' }, '此宿主没有公开该分类的配置描述；可用能力在上方单独列出。') : null)))
 }
 function schemaOf(namespace: Host, ref: Host): Host { return typeof ref === 'number' ? namespace.schema.refs[ref] : ref }
 function fieldLabel(schema: Host, key: string): string { return label(schema.meta?.i18n?.['zh-CN']?.$label ?? schema.meta?.label, fields[key] ?? key) }
@@ -54,7 +57,7 @@ function SchemaField({ namespace, refId, path, current, change }: { namespace: H
   const props = { 'aria-label': name, disabled: schema.meta?.disabled === true }
   let input: React.ReactNode
   if (schema.type === 'boolean') input = h('input', { ...props, type: 'checkbox', checked: !!current, onChange: (e: React.ChangeEvent<HTMLInputElement>) => change(path, e.target.checked) })
-  else if (schema.type === 'union' && schema.list?.every((r: Host) => schemaOf(namespace, r)?.type === 'const')) input = h('select', { ...props, value: String(current ?? ''), onChange: (e: React.ChangeEvent<HTMLSelectElement>) => { const option = schema.list.map((r: Host) => schemaOf(namespace, r)).find((s: Host) => String(s.value) === e.target.value); change(path, option?.value) } }, ...schema.list.map((r: Host) => { const s = schemaOf(namespace, r); return h('option', { key: String(s.value), value: String(s.value) }, fieldLabel(s, String(s.value))) }))
+  else if (schema.type === 'union' && schema.list?.every((r: Host) => schemaOf(namespace, r)?.type === 'const')) input = h('select', { ...props, value: String(current ?? ''), onChange: (e: React.ChangeEvent<HTMLSelectElement>) => { const option = schema.list.map((r: Host) => schemaOf(namespace, r)).find((s: Host) => String(s.value) === e.target.value); change(path, option?.value) } }, schema.list.some((r: Host) => String(schemaOf(namespace, r)?.value) === String(current ?? '')) ? null : h('option', { value: String(current ?? ''), disabled: true }, current === undefined || current === '' ? '未设置' : String(current)), ...schema.list.map((r: Host) => { const s = schemaOf(namespace, r); return h('option', { key: String(s.value), value: String(s.value) }, fieldLabel(s, String(s.value))) }))
   else if (schema.type === 'number' || schema.type === 'natural' || schema.type === 'integer') input = h('input', { ...props, type: 'number', value: current ?? '', onChange: (e: React.ChangeEvent<HTMLInputElement>) => change(path, e.target.value === '' ? undefined : Number(e.target.value)) })
   else if (schema.type === 'string') input = secret ? h(SecretField, { name, onChange: (v: string) => change(path, v || KEEP_VALUE) }) : h('input', { ...props, type: 'text', autoComplete: 'off', value: current ?? '', onChange: (e: React.ChangeEvent<HTMLInputElement>) => change(path, e.target.value) })
   else input = h(JsonField, { name, current, onChange: (v: Host) => change(path, v) })
@@ -85,19 +88,14 @@ function Plugins({ ctx }: { ctx: Host }) {
   React.useEffect(() => ctx.remote.$on('plugin-manager/install-log', (chunk: Host) => { setLog(previous => (previous + chunk.text).slice(-30000)) }), [ctx])
   return h(React.Fragment, null, h('h2', { style: { marginTop: 20 } }, '插件与安装任务'), h('section', { className: 'rc-card' }, h('label', { className: 'rc-label' }, '安装插件', h('input', { placeholder: '@scope/package 或安装地址', value: spec, onChange: (e: React.ChangeEvent<HTMLInputElement>) => setSpec(e.target.value) })), h('button', { className: 'rc-primary', disabled: action.busy || !spec.trim(), onClick: async () => { void action.run(async () => { const inspection = value(await ctx.remote.pluginManager.inspect(spec.trim(), {})); if (inspection.status === 'refused') throw new Error(inspection.reason); if (!await confirmAction(`在电脑上安装并启用 ${inspection.name || spec}？`)) return; const id = crypto.randomUUID(); setRequestId(id); sessionStorage.setItem('dsrc-install-request', id); setLog(''); const result = value(await ctx.remote.pluginManager.installBundle(spec.trim(), { requestId: id })); bundles.reload(); setRequestId(''); sessionStorage.removeItem('dsrc-install-request'); if (result.application === 'failed' || result.error) throw new Error(result.packageResult?.output || result.error?.diagnostic || '安装失败'); action.setNotice('安装任务已完成'); return result }, '') } }, action.busy ? '正在执行…' : '检查并安装'), requestId ? h('button', { onClick: async () => { void ctx.remote.pluginManager.cancelInstall(requestId).then(value).catch((e: Error) => action.setError(e.message)) } }, '取消安装') : null, log ? h('pre', { 'aria-label': '安装日志' }, log) : null),
     action.error || bundles.error ? h('p', { className: 'rc-error' }, action.error || bundles.error) : null, action.notice ? h('p', { className: 'rc-notice', role: 'status' }, action.notice) : null,
-    ...(bundles.data ?? []).map((bundle: Host) => h('section', { key: bundle.name, className: 'rc-card' }, h('h3', null, label(bundle.meta?.title, bundle.name)), h('p', { className: 'rc-muted' }, bundle.name, ' ', bundle.version), h('p', null, label(bundle.meta?.description, bundle.description)), h('div', { className: 'rc-actions' }, h('button', { disabled: action.busy || !!bundle.readOnlyReason, onClick: async () => { void action.run(async () => { const result = value(await ctx.remote.pluginManager.setBundleEnabled(bundle.name, !bundle.enabled)); if (result.error) throw new Error(result.error.diagnostic || result.error.code); bundles.reload(); return result }) } }, bundle.enabled ? '停用' : '启用'), bundle.removable ? h('button', { className: 'rc-danger', disabled: action.busy, onClick: async () => { if (await confirmAction(`卸载 ${bundle.name}？`)) void action.run(async () => { const result = value(await ctx.remote.pluginManager.removeBundle(bundle.name)); if (result.error) throw new Error(result.error.diagnostic || result.error.code); bundles.reload(); return result }, '插件已卸载') } }, '卸载') : null))))
+    ...(bundles.data ?? []).map((bundle: Host) => h('section', { key: bundle.name, className: 'rc-card' }, h('h3', null, label(bundle.meta?.title, bundle.name)), h('p', { className: 'rc-muted' }, bundle.name, ' ', bundle.version), h('p', null, label(bundle.meta?.description, bundle.description)), h('div', { className: 'rc-actions' }, h('button', { disabled: action.busy || !!bundle.readOnlyReason, onClick: async () => { if (bundle.name === SELF && bundle.enabled && !await confirmAction('停用远程控制插件会立即断开这台设备，之后只能在电脑上重新启用。继续？')) return; void action.run(async () => { const result = value(await ctx.remote.pluginManager.setBundleEnabled(bundle.name, !bundle.enabled)); if (result.error) throw new Error(result.error.diagnostic || result.error.code); bundles.reload(); return result }) } }, bundle.enabled ? '停用' : '启用'), bundle.removable ? h('button', { className: 'rc-danger', disabled: action.busy, onClick: async () => { if (await confirmAction(bundle.name === SELF ? '卸载远程控制插件会立即断开这台设备，之后只能在电脑上重新安装。继续？' : `卸载 ${bundle.name}？`)) void action.run(async () => { const result = value(await ctx.remote.pluginManager.removeBundle(bundle.name)); if (result.error) throw new Error(result.error.diagnostic || result.error.code); bundles.reload(); return result }, '插件已卸载') } }, '卸载') : null))))
 }
 function Workspaces({ ctx }: { ctx: Host }) {
   const workspaces = useStore(ctx.workspaces.list), action = useAction(), [path, setPath] = React.useState('')
   return h(React.Fragment, null, h('h2', null, '工作区'), h('section', { className: 'rc-card' }, h('label', { className: 'rc-label' }, '电脑上的文件夹路径', h('input', { value: path, onChange: (e: React.ChangeEvent<HTMLInputElement>) => setPath(e.target.value) })), h('button', { disabled: action.busy || !path.trim(), onClick: async () => { void action.run(() => ctx.workspaces.create({ path: path.trim() }), '工作区已添加') } }, '添加工作区')), ...(workspaces.items ?? []).map((workspace: Host) => h('section', { key: workspace.workspaceId, className: 'rc-card' }, h('h3', null, workspace.title), h('p', { className: 'rc-path' }, workspace.path), h('div', { className: 'rc-actions' }, h('button', { disabled: action.busy, onClick: async () => { const title = await ask('工作区名称', workspace.title); if (title?.trim()) void action.run(() => ctx.workspaces.rename(workspace.workspaceId, title.trim())) } }, '重命名'), h('button', { disabled: action.busy, onClick: async () => { if (await confirmAction('从工作区列表移除？电脑上的文件仍保留。')) void action.run(() => ctx.workspaces.delete(workspace.workspaceId), '已移除') } }, '移除')))), action.error ? h('p', { className: 'rc-error' }, action.error) : null, action.notice ? h('p', { role: 'status' }, action.notice) : null)
 }
-class Boundary extends React.Component<{ children: React.ReactNode }, { error: string }> {
-  state = { error: '' }
-  static getDerivedStateFromError(error: Error) { return { error: error.message } }
-  render() { return this.state.error ? h('div', { className: 'rc-error' }, '这个插件页面暂时无法在兼容容器中显示：', this.state.error) : this.props.children }
-}
 function Compatibility({ ctx, entry }: { ctx: Host; entry: Host }) {
-  return h('section', { className: 'rc-compat' }, h('p', { className: 'rc-notice' }, '插件兼容页面 · 操作作用于电脑'), h(Boundary, null, h(PluginPage, { ctx, entry })))
+  return h('section', { className: 'rc-compat' }, h('p', { className: 'rc-notice' }, '插件兼容页面 · 操作作用于电脑'), h(Boundary, { what: '这个插件页面' }, h(PluginPage, { ctx, entry })))
 }
 function Skills({ ctx, sessionId }: { ctx: Host; sessionId?: string }) {
   const list = useLoad<Host>(async () => sessionId ? value(await ctx.remote.skills.list({ sessionId })) : undefined, [ctx, sessionId])

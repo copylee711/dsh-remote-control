@@ -41,6 +41,18 @@ export function useAction() {
   }
   return { busy, error, notice, run, setError, setNotice }
 }
+/** Keeps a rendering failure inside one part of the page, with a way back. */
+export class Boundary extends React.Component<{ children?: React.ReactNode; what?: string }, { error: string }> {
+  state = { error: '' }
+  static getDerivedStateFromError(error: unknown) { return { error: error instanceof Error ? error.message : String(error) } }
+  render() {
+    if (!this.state.error) return this.props.children
+    return React.createElement('div', { className: 'rc-error', role: 'alert' },
+      `${this.props.what ?? '这部分内容'}暂时无法显示：${this.state.error}`,
+      React.createElement('button', { onClick: () => this.setState({ error: '' }) }, '重试'),
+      React.createElement('button', { onClick: () => location.reload() }, '重新加载'))
+  }
+}
 export function label(item: any, fallback = ''): string {
   if (typeof item === 'function') { try { return String(item()) } catch { return fallback } }
   if (typeof item === 'string') return item

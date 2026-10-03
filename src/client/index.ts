@@ -4,7 +4,7 @@ const h = React.createElement
 const ROUTE = '/api/dsh-remote-control/manage'
 interface Status {
   enabled: boolean; busy: boolean; mode: 'public' | 'lan' | 'fixed'; activeMode?: 'public' | 'lan' | 'fixed'; autoStart: boolean; proxyConfigured: boolean
-  phase: string; error?: string; gatewayPort: number; local: boolean; expiresAt?: number; qr?: string
+  phase: string; error?: string; warning?: string; gatewayPort: number; local: boolean; expiresAt?: number; qr?: string
   links: Array<{ base: string; url?: string }>; requests: Array<{ id: string; name: string; expiresAt: number }>
   devices: Array<{ id: string; name: string; lastSeenAt: number; online: boolean }>; fixedReason: string; lanHint: string
 }
@@ -85,6 +85,7 @@ export function RemoteControlPanel(): React.ReactElement {
       state?.devices.length ? state.devices.map(device => h('div', { className: 'dsrc-device dsrc-row', key: device.id }, h('div', null, h('div', { className: 'dsrc-device-name' }, device.name, device.online ? ' · 在线' : ''), h('div', { className: 'dsrc-muted' }, '最近使用 ', new Date(device.lastSeenAt).toLocaleString('zh-CN'))), button('撤销授权', 'revoke', { id: device.id }, 'dsrc-danger'))) : h('p', { className: 'dsrc-empty' }, '还没有配对设备。扫码并确认后，设备会出现在这里。'),
       h('p', { className: 'dsrc-note' }, '设备连续 30 天未使用后过期。关闭连接会保留授权；撤销授权会切断设备的现有连接。')),
     error || state?.error ? h('div', { className: 'dsrc-error', role: 'alert' }, error || state?.error) : null,
+    state?.warning ? h('p', { className: 'dsrc-note', role: 'status' }, state.warning) : null,
     notice ? h('p', { className: 'dsrc-note', role: 'status' }, notice) : null,
   )
 }

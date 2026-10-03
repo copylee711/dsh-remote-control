@@ -60,7 +60,7 @@ try {
   await page.getByRole('dialog').getByRole('textbox').fill('QA 重命名会话'); await page.getByRole('button', { name: '确认', exact: true }).click()
   await page.getByText('会话已重命名', { exact: true }).waitFor()
   await page.getByRole('main').getByRole('button', { name: '归档会话', exact: true }).click(); await page.getByText('已归档', { exact: true }).waitFor()
-  await page.getByRole('button', { name: '打开会话列表', exact: true }).click(); await page.getByRole('complementary').getByRole('button', { name: '归档会话', exact: true }).click()
+  await page.getByRole('button', { name: '打开会话列表', exact: true }).click(); await page.getByRole('complementary').getByRole('button', { name: '已归档会话', exact: true }).click()
   await page.getByRole('button', { name: 'QA 重命名会话', exact: true }).click(); await page.getByRole('button', { name: '会话操作', exact: true }).click()
   await page.getByRole('button', { name: '恢复会话', exact: true }).click(); await page.getByText('已恢复', { exact: true }).waitFor(); await page.getByRole('button', { name: '返回会话', exact: true }).first().click()
   check('rename, archive and restore through host services')

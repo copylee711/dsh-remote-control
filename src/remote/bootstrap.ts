@@ -9,6 +9,7 @@ import * as Slots from '@deepseek-ai/dsh-client-ui-slots'
 import * as Primitives from '@deepseek-ai/dsh-client-ui-primitives'
 import * as Dockkit from '@deepseek-ai/dsh-client-ui-dockkit'
 import { App } from './app.js'
+import { Boundary } from './common.js'
 import { REMOTE_CSS } from './style.js'
 
 async function boot(): Promise<void> {
@@ -28,7 +29,7 @@ async function boot(): Promise<void> {
   const style = document.createElement('style'); style.textContent = REMOTE_CSS; document.head.append(style)
   // The official renderer is registered for extension compatibility but its
   // desktop AppFrame is never mounted. Our root owns all ordinary navigation.
-  ReactDOMClient.createRoot(document.getElementById('root')!).render(React.createElement(App, { ctx: ctx as any }))
+  ReactDOMClient.createRoot(document.getElementById('root')!).render(React.createElement(Boundary, { what: '远程界面' }, React.createElement(App, { ctx: ctx as any })))
   globals.__DSH_RC_CONTEXT__ = ctx
 }
 void boot().catch(error => {

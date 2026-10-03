@@ -4,11 +4,16 @@ import { fileURLToPath } from 'node:url'
 import type { Gateway } from './gateway.js'
 import { fetch as tunnelFetch, ProxyAgent } from 'undici'
 
+/** How long a new public address may take to answer before the start counts as failed. */
+const VERIFY_MS = 60_000
 export type TunnelPhase = 'off' | 'downloading' | 'starting' | 'verifying' | 'ready' | 'error'
 export class TunnelManager {
   phase: TunnelPhase = 'off'
   url?: string
   error?: string
+  /** The address stopped answering this computer's own check; phones may still reach it. */
+  warning?: string
+  private verifyUntil = 0
   private child?: ChildProcess
   private generation = 0
   private timer?: ReturnType<typeof setTimeout>
@@ -22,7 +27,7 @@ export class TunnelManager {
     await this.stop()
     this.proxy = proxy ? new ProxyAgent(proxy) : undefined
     const generation = ++this.generation
-    this.phase = 'starting'; this.error = undefined
+    this.phase = 'starting'; this.error = undefined; this.warning = undefined
     const env = { ...process.env, ELECTRON_RUN_AS_NODE: '1', NODE_USE_ENV_PROXY: '1', DSH_RC_TUNNEL_PORT: String(this.gateway.port) }
     if (proxy) { Object.assign(env, { HTTPS_PROXY: proxy, HTTP_PROXY: proxy }); }
     const child = this.child = fork(fileURLToPath(new URL('./tunnel-worker.js', import.meta.url)), [], { env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe', 'ipc'], execArgv: [] })
@@ -39,7 +44,7 @@ export class TunnelManager {
         try { url = new URL(message.url); if (url.protocol !== 'https:' || !url.hostname.endsWith('.trycloudflare.com') || url.username || url.password || url.port || url.pathname !== '/') throw new Error() }
         catch { this.fail('untun 返回的公网地址不符合预期。'); return }
         clearTimeout(this.timer)
-        this.url = url.origin; this.gateway.allowAuthority(url.host); this.phase = 'verifying'
+        this.url = url.origin; this.gateway.allowAuthority(url.host); this.phase = 'verifying'; this.verifyUntil = Date.now() + VERIFY_MS
         void this.probe(generation)
       }
     })
@@ -64,13 +69,17 @@ export class TunnelManager {
     finally { this.checking = false }
     if (generation !== this.generation) return
     if (healthy) {
-      this.failures = 0; this.phase = 'ready'; clearTimeout(this.timer)
+      this.failures = 0; this.phase = 'ready'; this.warning = undefined; clearTimeout(this.timer)
       if (!this.monitor) { this.monitor = setInterval(() => { void this.probe(generation) }, 30000); this.monitor.unref() }
-    } else if (++this.failures >= 3) this.fail(`公网地址未通过连通性检查（${this.lastFailure}）；域名分配不代表可用。请重试，或切换局域网连接。`)
+    } else if (this.phase === 'ready') {
+      // This check leaves from the computer, whose route to the address can fail while phones still
+      // get through. Only the tunnel process exiting ends a verified connection.
+      if (++this.failures >= 3) this.warning = `电脑端暂时无法访问公网地址（${this.lastFailure}）。手机可能仍可使用；如果手机也连不上，请重新连接。`
+    } else if (Date.now() >= this.verifyUntil) this.fail(`公网地址未通过连通性检查（${this.lastFailure}）；域名分配不代表可用。请重试、配置电脑端代理，或切换局域网连接。`)
     else { this.timer = setTimeout(() => { void this.probe(generation) }, 3000); this.timer.unref() }
   }
   private fail(message: string): void {
-    this.phase = 'error'; this.error = message
+    this.phase = 'error'; this.error = message; this.warning = undefined
     if (this.url) this.gateway.disallowAuthority(new URL(this.url).host)
     this.url = undefined
     ++this.generation; clearTimeout(this.timer); clearInterval(this.monitor); this.monitor = undefined
@@ -94,7 +103,7 @@ export class TunnelManager {
   async stop(): Promise<void> {
     ++this.generation; clearTimeout(this.timer); clearInterval(this.monitor); this.monitor = undefined
     if (this.url) this.gateway.disallowAuthority(new URL(this.url).host)
-    const child = this.child; this.child = undefined; this.url = undefined; this.phase = 'off'; this.failures = 0
+    const child = this.child; this.child = undefined; this.url = undefined; this.phase = 'off'; this.failures = 0; this.warning = undefined
     const proxy = this.proxy; this.proxy = undefined
     await Promise.all([this.closeChild(child), proxy?.destroy()])
   }

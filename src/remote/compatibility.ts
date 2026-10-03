@@ -1,5 +1,6 @@
 import * as React from 'react'
 import type { Host } from './common.js'
+import { slotRenderer } from './host.js'
 
 /**
  * DSH rc.2 exposes only a root renderer, not a standalone plugin-page outlet.
@@ -10,10 +11,9 @@ import type { Host } from './common.js'
  */
 export function PluginPage({ ctx, entry }: { ctx: Host; entry: Host }): React.ReactElement {
   const tree = React.useMemo(() => {
-    const registry = ctx.slots
-    const renderer = registry._renderer
-    const original = registry.hostFace?.()
-    if (!renderer?.renderRoot || !original) throw new Error('宿主版本未提供兼容页面所需的渲染接口')
+    const slots = slotRenderer(ctx)
+    if (!slots) throw new Error('宿主版本未提供兼容页面所需的渲染接口')
+    const original = slots.face
     const section = original.specOf('settings.section')
     const root = {
       options: { name: 'root', id: 'remote-plugin-container' },
@@ -27,7 +27,7 @@ export function PluginPage({ ctx, entry }: { ctx: Host; entry: Host }): React.Re
       if (key === 'storeOf') return (item: Host, scope: Host) => item === root ? undefined : target.storeOf(item, scope)
       return Reflect.get(target, key)
     } })
-    return renderer.renderRoot(host, {})
+    return slots.renderRoot(host, {})
   }, [ctx, entry])
   return React.createElement(React.Fragment, null, tree)
 }
