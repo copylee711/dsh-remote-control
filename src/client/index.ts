@@ -4,7 +4,7 @@ import { ACCENTS, ACCENT_IDS, type Accent } from '../accent.js'
 const h = React.createElement
 const ROUTE = '/api/dsh-remote-control/manage'
 interface Status {
-  enabled: boolean; busy: boolean; mode: 'public' | 'lan' | 'fixed'; activeMode?: 'public' | 'lan' | 'fixed'; autoStart: boolean; proxyConfigured: boolean; accent?: Accent
+  enabled: boolean; busy: boolean; mode: 'public' | 'lan' | 'fixed'; activeMode?: 'public' | 'lan' | 'fixed'; autoStart: boolean; proxyConfigured: boolean; accent?: Accent; route?: string; activeRoute?: string; routeNote?: string
   phase: string; error?: string; warning?: string; gatewayPort: number; local: boolean; expiresAt?: number; qr?: string
   links: Array<{ base: string; url?: string }>; requests: Array<{ id: string; name: string; expiresAt: number }>
   devices: Array<{ id: string; name: string; createdAt: number; lastSeenAt: number; online: boolean; via?: 'lan' | 'public' }>; fixedReason: string; lanHint: string
@@ -24,7 +24,7 @@ type Way = 'public' | 'lan'
 /** The two ways a phone reaches the computer, in words that need no networking knowledge. */
 const WAYS: Array<{ mode: Way; name: string; text: string }> = [
   { mode: 'lan', name: '同一 Wi‑Fi', text: '手机和电脑连着同一个 Wi‑Fi 或路由器时使用。速度最快，数据不经过外部服务器。' },
-  { mode: 'public', name: '任意网络', text: '手机用流量或别处的 Wi‑Fi 也能连。通过 Cloudflare 的免费通道转发，每次开启都会换一个新地址，需要重新扫码。' },
+  { mode: 'public', name: '任意网络', text: '手机用流量或别处的 Wi‑Fi 也能连。通过免费的公共通道转发，每次开启都会换一个新地址，需要重新扫码。' },
 ]
 const wayName = (mode: string | undefined) => WAYS.find(way => way.mode === mode)?.name ?? ''
 const phaseLabels: Record<string, string> = { off: '未开启', downloading: '正在下载连接组件', starting: '正在建立连接', verifying: '正在检查能否访问', ready: '已开启', error: '连接失败' }
@@ -125,6 +125,12 @@ export function RemoteControlPanel(): React.ReactElement {
       h('div', { className: 'dsrc-note' }, '强调色　', h('span', { className: 'dsrc-swatches', role: 'radiogroup', 'aria-label': '强调色' },
         ...ACCENT_IDS.map(id => h('button', { key: id, type: 'button', className: 'dsrc-swatch', role: 'radio', 'aria-checked': (state?.accent ?? 'orange') === id, 'aria-label': ACCENTS[id].name, title: ACCENTS[id].name, style: { '--rc-swatch': ACCENTS[id].light.accent } as React.CSSProperties, onClick: () => { void act('preferences', { accent: id }) } }))),
         '　电脑面板、配对页和手机界面共用'),
+      shown !== 'lan' ? h('div', { className: 'dsrc-note' }, '线路　',
+        h('span', { className: 'dsrc-mode dsrc-routes', role: 'group', 'aria-label': '线路' },
+          ...([['cloudflare', 'Cloudflare'], ['ssh', 'localhost.run（备用）']] as const).map(([id, name]) =>
+            h('button', { key: id, type: 'button', 'aria-pressed': (state?.route ?? 'cloudflare') === id, disabled, onClick: () => { void act('preferences', { route: id }) } }, name))),
+        state?.activeRoute ? `　正在使用 ${state.activeRoute}` : '') : null,
+      shown !== 'lan' ? h('p', { className: 'dsrc-note' }, state?.routeNote ?? 'Cloudflare 开不起来时可以换 localhost.run：它用电脑自带的 ssh，不用下载任何东西，但速度慢得多，手机第一次打开可能要等几分钟，地址每隔几小时还会换一次。改线路在下次开启时生效。') : null,
       shown !== 'lan' ? h('details', { className: 'dsrc-proxy' }, h('summary', null, state?.proxyConfigured ? '电脑的网络代理 · 已设置' : '开启失败？给电脑设置网络代理（可选）'), h('div', { className: 'dsrc-input' }, h('input', { 'aria-label': '电脑端代理地址', placeholder: 'http://127.0.0.1:7890', value: proxy, onChange: (event: React.ChangeEvent<HTMLInputElement>) => setProxy(event.target.value) }), button('保存代理', 'preferences', { proxy })), h('p', { className: 'dsrc-note' }, '“任意网络”需要这台电脑能访问 Cloudflare。电脑平时靠代理软件上网的话，把代理地址填在这里；留空则使用系统已有的设置。保存后重新开启生效。手机不需要代理。首次开启会下载 Cloudflare 的连接组件。')) : null,
     ),
     h('section', { className: 'dsrc-surface' }, h('div', { className: 'dsrc-row' }, h('h3', null, '扫码配对'), h('span', { className: 'dsrc-muted' }, expired ? '正在更新二维码' : firstURL ? '只用于添加新设备 · 自动更新' : '等待连接就绪')),

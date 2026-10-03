@@ -13,8 +13,9 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import QRCode from 'qrcode'
 import { PairingService } from './pairing.js'
 import { Gateway, MANAGE_PATH, REMOTE_MARK } from './gateway.js'
-import { TunnelManager } from './tunnel.js'
-import { body, isLoopback, json, sameOrigin } from './http.js'
+import { TunnelManager, ROUTES, ROUTE_IDS, isTemporaryHost, type Route } from './tunnel.js'
+import { body, gzipFor, isLoopback, json, sameOrigin } from './http.js'
+import { gzipSync } from 'node:zlib'
 import { isAccent, type Accent } from './accent.js'
 
 export const name = '@copylee/dsh-remote-control'
@@ -24,7 +25,8 @@ export const Config = z.object({
 })
 export interface Config { gatewayPort?: number }
 type Mode = 'public' | 'lan' | 'fixed'
-interface Preferences { autoStart: boolean; mode: Mode; proxy?: string; accent: Accent }
+const isRoute = (value: unknown): value is Route => ROUTE_IDS.includes(value as Route)
+interface Preferences { autoStart: boolean; mode: Mode; proxy?: string; accent: Accent; route: Route }
 const mime: Record<string, string> = { '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2', '.webmanifest': 'application/manifest+json' }
 
 /** Adapters that are rarely the network a phone is on: virtual switches, VPN / proxy tunnels. */
@@ -46,9 +48,6 @@ export function lanAddresses(interfaces = networkInterfaces()): string[] {
   return (usable.length ? usable : ranked).map(item => item.row.address)
 }
 
-/** A temporary public address: gone for good once its tunnel closes. */
-const isTemporaryHost = (host: string | undefined) => !!host && host.endsWith('.trycloudflare.com')
-
 /** Exchange the Host's launch token entirely inside the process. */
 export function hostCookie(connection: Context['connection'], port: number): string {
   const base = `http://127.0.0.1:${port}/`
@@ -66,12 +65,12 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   const storage = join(process.env.DSH_HOME || join(homedir(), '.dsh'), 'dsh-remote-control', String(profile?.name || process.env.DSH_PROFILE || 'default').replace(/[^a-zA-Z0-9_-]/g, '_'))
   mkdirSync(storage, { recursive: true })
   const prefsFile = join(storage, 'preferences.json')
-  let preferences: Preferences = { autoStart: false, mode: 'public', accent: 'orange' }
+  let preferences: Preferences = { autoStart: false, mode: 'public', accent: 'orange', route: 'cloudflare' }
   let error: string | undefined
   if (existsSync(prefsFile)) {
     try {
       const stored = JSON.parse(readFileSync(prefsFile, 'utf8')) as Partial<Preferences>
-      preferences = { autoStart: stored.autoStart === true, mode: ['public', 'lan', 'fixed'].includes(String(stored.mode)) ? stored.mode! : 'public', proxy: typeof stored.proxy === 'string' ? stored.proxy : undefined, accent: isAccent(stored.accent) ? stored.accent : 'orange' }
+      preferences = { autoStart: stored.autoStart === true, mode: ['public', 'lan', 'fixed'].includes(String(stored.mode)) ? stored.mode! : 'public', proxy: typeof stored.proxy === 'string' ? stored.proxy : undefined, accent: isAccent(stored.accent) ? stored.accent : 'orange', route: isRoute(stored.route) ? stored.route : 'cloudflare' }
     } catch {
       // A damaged preferences file must not keep the plugin from loading; device authorizations live elsewhere.
       error = '远程控制的偏好设置文件已损坏，已恢复默认设置（设备授权不受影响）。'
@@ -100,6 +99,14 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     const require = createRequire(import.meta.url)
     const distRoot = join(dirname(require.resolve('@deepseek-ai/dsh-web-frontend/package.json')), 'dist')
     const renderIndex = async () => ready.webServer.renderIndex((await readFile(join(distRoot, 'index.html'), 'utf8')).replace(/<script type="module"[^>]*src="[^"]+"[^>]*><\/script>/, '<script type="module" src="/rc-assets/remote.js"></script><link rel="stylesheet" href="/rc-assets/style.css">').replace('<title>DeepSeek Harness</title>', '<title>DSH · 远程</title>'))
+    // Files of the app are compressed once and kept: they are the bulk of what a phone first downloads.
+    const packed = new Map<string, Buffer>()
+    const send = (req: IncomingMessage | undefined, res: ServerResponse, headers: Record<string, string>, key: string, data: Buffer): void => {
+      if (data.length < 1024 || !gzipFor(req, headers['content-type'])) { res.writeHead(200, headers); res.end(data); return }
+      let small = packed.get(key)
+      if (!small) { if (packed.size > 256) packed.clear(); packed.set(key, small = gzipSync(data, { level: 9 })) }
+      res.writeHead(200, { ...headers, 'content-encoding': 'gzip', vary: 'accept-encoding' }); res.end(small)
+    }
     const asset = async (pathname: string, res: ServerResponse, req?: IncomingMessage): Promise<boolean> => {
       if (pathname.startsWith('/rc-assets/')) {
         const path = resolve(dirname(fileURLToPath(import.meta.url)), '.' + pathname.replace('/rc-assets/', '/'))
@@ -111,14 +118,14 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
           const hashed = /^\/rc-assets\/remote-.+-[A-Za-z0-9_-]{8}\.js$/.test(pathname)
           const headers = { 'content-type': mime[extname(path)] ?? 'application/octet-stream', 'cache-control': hashed ? 'private, max-age=31536000, immutable' : 'private, no-cache', etag }
           if (req?.headers['if-none-match'] === etag) { res.writeHead(304, headers).end(); return true }
-          const data = await readFile(path); res.writeHead(200, headers); res.end(data)
+          send(req, res, headers, `${path}:${etag}`, await readFile(path))
         } catch { res.writeHead(404).end() }
         return true
       }
       if (!pathname.startsWith('/assets/') && !['/favicon.svg', '/favicon-dark.svg', '/manifest.webmanifest'].includes(pathname)) return false
       const path = resolve(distRoot, `.${decodeURIComponent(pathname)}`)
       if (!path.startsWith(resolve(distRoot) + sep)) { res.writeHead(403).end(); return true }
-      try { const data = await readFile(path); res.writeHead(200, { 'content-type': mime[extname(path)] ?? 'application/octet-stream', 'cache-control': 'private, max-age=3600' }); res.end(data) }
+      try { const info = await stat(path); send(req, res, { 'content-type': mime[extname(path)] ?? 'application/octet-stream', 'cache-control': 'private, max-age=3600' }, `${path}:${info.size}:${info.mtimeMs}`, await readFile(path)) }
       catch { res.writeHead(404).end() }
       return true
     }
@@ -128,6 +135,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
       const active = new Set(gateway?.onlineIds() ?? [])
       return {
         enabled, busy, mode: preferences.mode, activeMode, autoStart: preferences.autoStart, proxyConfigured: !!preferences.proxy, accent: preferences.accent,
+        route: preferences.route, activeRoute: enabled && activeMode === 'public' && tunnel?.route ? ROUTES[tunnel.route].name : undefined, routeNote: enabled && activeMode === 'public' ? tunnel?.note : undefined,
         phase: enabled ? activeMode === 'public' ? tunnel?.phase ?? 'starting' : 'ready' : error ? 'error' : 'off',
         error: error ?? tunnel?.error, warning: enabled && activeMode === 'public' ? tunnel?.warning : undefined, gatewayPort: gateway?.port ?? 0, local,
         expiresAt: qr?.expiresAt, links, qr: links[0]?.url ? await QRCode.toDataURL(links[0].url, { width: 260, margin: 2, errorCorrectionLevel: 'M' }) : undefined,
@@ -152,7 +160,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
       busy = true; error = undefined
       let ticket: number | undefined
       try {
-        const mode = preferences.mode, proxy = preferences.proxy
+        const mode = preferences.mode, proxy = preferences.proxy, route = preferences.route
         const stopping = stop(); ticket = generation
         await stopping; if (disposed || ticket !== generation) return
         credential = hostCookie(ready.connection, upstreamPort)
@@ -163,7 +171,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
         if (mode === 'public') {
           const currentTunnel = tunnel = new TunnelManager(next, message => {
             if (ticket === generation && tunnel === currentTunnel) { error = message; void stop() }
-          }); await currentTunnel.start(proxy)
+          }); await currentTunnel.start(proxy, [route], join(storage, 'known_hosts'))
           if (disposed || ticket !== generation) await currentTunnel.stop()
         }
       } catch (failure) { if (ticket === generation) { error = failure instanceof Error ? failure.message : '启动失败。'; await stop() }; throw failure }
@@ -211,6 +219,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
           const next = { ...preferences }
           if (typeof input.autoStart === 'boolean') next.autoStart = input.autoStart
           if (input.mode !== undefined) { if (!['public', 'lan', 'fixed'].includes(String(input.mode))) throw new Error('连接模式不正确。'); next.mode = input.mode as Mode }
+          if (input.route !== undefined) { if (!isRoute(input.route)) throw new Error('线路不正确。'); next.route = input.route }
           if (input.accent !== undefined) { if (!isAccent(input.accent)) throw new Error('强调色不正确。'); next.accent = input.accent }
           if (input.proxy !== undefined) {
             const value = String(input.proxy).trim()

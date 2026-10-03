@@ -7,8 +7,25 @@ import { Picker } from './picker.js'
 import { chatContent, pendingInteraction } from './host.js'
 const h = React.createElement
 const markdownLabels = { code: { copyLabel: '复制代码', copiedLabel: '已复制' }, footnotes: '注释' }
-export function Markdown({ text, streaming = false }: { text: string; streaming?: boolean }) {
-  return h(MarkdownText, { text, streaming, labels: markdownLabels })
+/**
+ * Where an image written as a file path in a reply can be loaded from: the Host's authenticated
+ * file route, as its own chat does. A relative path is taken from the session's working folder.
+ */
+function imageResolver(cwd: string | undefined) {
+  return { resolve(value: string): string | undefined {
+    let path: string
+    try { path = decodeURIComponent(value.split(/[?#]/u)[0] ?? '') } catch { return undefined }
+    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(path) || path.startsWith('data:')) return undefined   // a web address: the renderer handles it
+    const absolute = /^[a-zA-Z]:[\\/]/.test(path) || path.startsWith('/')
+    if (!absolute) { if (!cwd) return undefined; path = `${cwd.replace(/[\\/]+$/, '')}/${path.replace(/^\.[\\/]/, '')}` }
+    // No network shares, no control characters.
+    if (/^[\\/]{2}/.test(path) || [...path].some(char => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127)) return undefined
+    return new URL(`api/file?path=${encodeURIComponent(path)}`, document.baseURI).href
+  } }
+}
+export function Markdown({ text, streaming = false, cwd }: { text: string; streaming?: boolean; cwd?: string }) {
+  const pathImages = React.useMemo(() => imageResolver(cwd), [cwd])
+  return h(MarkdownText, { text, streaming, labels: markdownLabels, pathImages })
 }
 
 export function Chat({ ctx, sessionId, onSession }: { ctx: Host; sessionId: string; onSession: (id: string) => void }): React.ReactElement {
@@ -27,9 +44,10 @@ function ImageBlock({ ctx, sessionId, attachment }: { ctx: Host; sessionId: stri
   return image.data ? h('a', { href: image.data, target: '_blank', rel: 'noopener' }, h('img', { src: image.data, alt: '会话附件', loading: 'lazy' })) : h('span', { className: 'rc-muted' }, image.error || '加载图片…')
 }
 function Blocks({ ctx, sessionId, blocks, streaming = false }: { ctx: Host; sessionId: string; blocks: Host[]; streaming?: boolean }) {
+  const cwd: string | undefined = useStore(ctx.sessions.list).byId?.[sessionId]?.cwd
   return h(React.Fragment, null, ...blocks.map((block, i) => {
     const kind = block.kind ?? block.type
-    if (kind === 'text') return h(Markdown, { key: i, text: block.text ?? '', streaming })
+    if (kind === 'text') return h(Markdown, { key: i, text: block.text ?? '', streaming, cwd })
     if (kind === 'reasoning' || kind === 'thinking') return h('details', { key: i, className: 'rc-tool-event' }, h('summary', null, '思考过程'), h(Markdown, { text: block.text || block.thinking || '' }))
     if (kind === 'image' && block.attachment) return h(ImageBlock, { key: i, ctx, sessionId, attachment: block.attachment })
     if (kind === 'tool-call') return h('details', { key: i, className: 'rc-tool-event' }, h('summary', null, block.name), h('pre', null, block.argsRaw))
