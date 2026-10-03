@@ -35,7 +35,7 @@ input[type=checkbox],input[type=radio]{width:22px;height:22px;padding:0;accent-c
 .rc-primary:hover,.rc-send:hover{background:var(--rc-accent-hover)}
 .rc-danger{color:var(--rc-danger)}
 .rc-pill{background:var(--rc-paper);box-shadow:var(--rc-shadow)}
-.rc-text{background:transparent;min-height:0;padding:4px 10px}
+.rc-text{background:transparent;min-height:0;padding:4px 10px;white-space:nowrap;flex-shrink:0}
 .rc-round{display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px;min-height:44px;padding:0;flex-shrink:0;background:var(--rc-paper);box-shadow:var(--rc-shadow)}
 .rc-round.rc-plain{background:transparent;box-shadow:none}
 .rc-round.rc-plain:hover{background:var(--rc-soft)}
@@ -208,6 +208,8 @@ input[type=checkbox],input[type=radio]{width:22px;height:22px;padding:0;accent-c
 .rc-label{display:grid;gap:6px;min-width:0;margin:14px 0;font-size:15px}
 .rc-field-row{display:flex;align-items:start;justify-content:space-between;gap:14px}
 .rc-error{color:var(--rc-danger);padding:10px 16px;border:1px solid var(--rc-danger);border-radius:16px;margin-top:10px;margin-bottom:10px;overflow-wrap:anywhere}
+.rc-offline{color:var(--rc-danger);background:color-mix(in srgb,var(--rc-danger) 9%,var(--rc-paper));border:1px solid var(--rc-danger);border-radius:16px;padding:10px 14px;font-size:14px;line-height:1.6}
+.rc-offline strong{display:block;font-size:15px}
 .rc-notice{color:var(--rc-muted);padding:10px 16px;border-radius:16px;background:var(--rc-soft);margin-top:10px;margin-bottom:10px;overflow-wrap:anywhere}
 .rc-approval{border:1px solid var(--rc-accent)}
 .rc-path{font-family:ui-monospace,monospace;overflow-wrap:anywhere;font-size:13px}

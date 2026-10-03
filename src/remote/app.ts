@@ -30,6 +30,26 @@ export function App({ ctx }: { ctx: Host }): React.ReactElement {
     window.addEventListener('online', restored); window.addEventListener('dsh-rc-online', restored)
     return () => { window.removeEventListener('offline', lost); window.removeEventListener('dsh-rc-offline', lost); window.removeEventListener('online', restored); window.removeEventListener('dsh-rc-online', restored) }
   }, [])
+  // A lost connection is noticed here, not only when the next action fails: the gateway is asked
+  // for a sign of life every few seconds while the page is in view.
+  React.useEffect(() => {
+    let failures = 0, live = true
+    const probe = async () => {
+      if (document.hidden) return
+      try {
+        const response = await fetch('/api/dsh-remote-control/manage', { method: 'POST', cache: 'no-store', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'requests' }) })
+        if (!live) return
+        if (response.ok) { failures = 0; setOffline(false); return }
+        if (response.status === 403) return   // a revoked device gets its own full-page notice
+        failures++
+      } catch { failures++ }
+      if (live && failures >= 2) setOffline(true)
+    }
+    const timer = setInterval(() => { void probe() }, 6000)
+    const wake = () => { void probe() }
+    document.addEventListener('visibilitychange', wake); window.addEventListener('online', wake)
+    return () => { live = false; clearInterval(timer); document.removeEventListener('visibilitychange', wake); window.removeEventListener('online', wake) }
+  }, [])
   React.useEffect(() => {
     const media = matchMedia('(prefers-color-scheme: dark)')
     const apply = () => {
@@ -139,7 +159,11 @@ export function App({ ctx }: { ctx: Host }): React.ReactElement {
     h('main', { className: 'rc-main' },
       header,
       action.error ? h('div', { className: 'rc-error rc-banner', role: 'alert' }, action.error, h('button', { className: 'rc-text', 'aria-label': '关闭提示', onClick: () => action.setError('') }, '×')) : null,
-      offline ? h('div', { className: 'rc-notice rc-banner', role: 'status' }, '连接中断，正在等待网络恢复。未完成的发送与管理操作不会自动重放。', h('button', { className: 'rc-text', onClick: () => location.reload() }, '重新连接')) : null,
+      offline ? h('div', { className: 'rc-offline rc-banner', role: 'alert' },
+        h('span', null, h('strong', null, '和电脑的连接断开了。'), location.hostname.endsWith('.trycloudflare.com')
+          ? '电脑上的远程连接可能已关闭或重新开启；重新开启后地址会变，需要在电脑上重新扫码。'
+          : '请确认手机和电脑在同一个 Wi‑Fi，并且电脑上的远程连接还开着。恢复后会自动重连。'),
+        h('button', { className: 'rc-text', onClick: () => location.reload() }, '重试')) : null,
       page === 'chat'
         ? action.busy ? h('div', { className: 'rc-skeleton' }, '正在创建会话…')
           : sessionId ? h(Boundary, { key: sessionId, what: '这个会话' }, h(Chat, { ctx, sessionId, onSession: select }))

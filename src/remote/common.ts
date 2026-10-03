@@ -36,7 +36,11 @@ export function useAction() {
     if (locked.current) return
     locked.current = true; setBusy(true); setError(''); setNotice('')
     try { const result = value(await operation()); if (success) setNotice(success); return result }
-    catch (failure) { setError(failure instanceof Error ? failure.message : String(failure)) }
+    catch (failure) {
+      const text = failure instanceof Error ? failure.message : String(failure)
+      // The Host's transport errors are for developers; say what happened.
+      setError(/transport failure|HTTP 5\d\d|Failed to fetch|NetworkError|Load failed/i.test(text) ? '和电脑的连接断开了，这一步没有完成。连接恢复后请再试一次。' : text)
+    }
     finally { locked.current = false; setBusy(false) }
   }
   return { busy, error, notice, run, setError, setNotice }
