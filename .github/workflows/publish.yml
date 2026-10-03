@@ -28,6 +28,8 @@ jobs:
         run: |
           node --input-type=module -e "import p from './package.json' with {type:'json'}; if(process.env.GITHUB_REF_TYPE==='tag' && process.env.GITHUB_REF_NAME!=='v'+p.version) throw Error('Tag must match package version')"
           npm pack --dry-run
+          npm pack --dry-run --ignore-scripts --json > package-manifest.json
+          node scripts/check-package.mjs package-manifest.json
       - name: Publish with npm Trusted Publisher
         run: |
           PACKAGE=$(node -p 'require("./package.json").name')

@@ -1,32 +1,45 @@
-/** Runs before the official shell. No device or Host credential is embedded. */
+/** Runs before the remote app and the Host's client modules. No device or Host credential is embedded. */
 function remoteBoot(): void {
   const globals = window as unknown as Record<string, any>
   globals.__DSH_REMOTE_CONTROL__ = true
+  // The Host's page declares English; the app is Chinese, and browsers would offer to translate it.
+  document.documentElement.lang = 'zh-CN'; document.documentElement.setAttribute('translate', 'no')
   globals.__DSH_TRANSPORT__ = { ...globals.__DSH_TRANSPORT__, ownsHost: true }
   const originalFetch = window.fetch.bind(window)
   globals.__DSH_FILE_UPLOAD__ = { fetch: originalFetch }
   function disconnected(message: string): void {
     if (document.getElementById('dsh-rc-disconnected')) return
     const notice = document.createElement('div'); notice.id = 'dsh-rc-disconnected'; notice.setAttribute('role', 'alert')
-    notice.style.cssText = 'position:fixed;inset:0;z-index:2147483647;background:rgba(255,255,255,.97);display:flex;align-items:center;justify-content:center;padding:24px;font:16px/1.7 system-ui,sans-serif;text-align:center;color:#263d32'
+    const theme = document.documentElement.dataset.rcTheme
+    const dark = theme === 'dark' || (!theme && matchMedia('(prefers-color-scheme: dark)').matches)
+    notice.style.cssText = `position:fixed;inset:0;z-index:2147483647;background:${dark ? 'rgba(36,35,33,.97)' : 'rgba(250,249,245,.97)'};display:flex;align-items:center;justify-content:center;padding:24px;font:16px/1.7 system-ui,sans-serif;text-align:center;color:${dark ? '#F0EEE8' : '#292724'}`
     const box = document.createElement('div'), text = document.createElement('p'), retry = document.createElement('button')
     text.textContent = message; retry.textContent = '重新连接'; retry.onclick = () => location.reload()
-    retry.style.cssText = 'padding:12px 20px;border:0;border-radius:10px;background:#356d53;color:white;font:inherit'
+    let accent = ''
+    try { accent = localStorage.getItem('dsrc-accent') ?? '' } catch { /* storage unavailable: default colour */ }
+    const fill = accent === 'blue' ? '#3D63E6' : accent === 'black' ? (dark ? '#F0EEE8' : '#1F1E1D') : '#D97757'
+    retry.style.cssText = `padding:12px 20px;border:0;border-radius:999px;background:${fill};color:${accent === 'black' && dark ? '#242321' : '#fff'};font:inherit`
     box.append(text, retry); notice.append(box); (document.body ?? document.documentElement).append(notice)
+  }
+  /** The gateway's own refusal. A 403 from the Host (a path it will not read, say) is an ordinary error. */
+  async function unpaired(response: Response): Promise<boolean> {
+    if (response.status !== 403 || !response.headers.get('content-type')?.includes('application/json')) return false
+    try { return (await response.clone().json())?.code === 'unpaired' } catch { return false }
   }
   window.fetch = async (...args) => {
     const response = await originalFetch(...args)
-    if (response.status === 403 && new URL(String(args[0] instanceof Request ? args[0].url : args[0]), location.href).origin === location.origin) disconnected('设备授权已失效或撤销，请重新扫码并在电脑上确认。')
+    if (new URL(String(args[0] instanceof Request ? args[0].url : args[0]), location.href).origin === location.origin && await unpaired(response)) disconnected('设备授权已失效或撤销，请重新扫码并在电脑上确认。')
     return response
   }
   const OriginalSocket = window.WebSocket
   globals.WebSocket = class extends OriginalSocket {
     constructor(url: string | URL, protocols?: string | string[]) {
       super(url, protocols)
+      this.addEventListener('open', () => window.dispatchEvent(new Event('dsh-rc-online')))
       this.addEventListener('close', () => {
-        void originalFetch('/api/dsh-remote-control/manage', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'status' }) }).then(response => {
-          if (response.status === 403) disconnected('设备授权已撤销，远程连接已断开。请重新扫码。')
-        }).catch(() => disconnected('远程连接已中断。请检查网络或在电脑上重新开启连接。'))
+        void originalFetch('/api/dsh-remote-control/manage', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'status' }) }).then(async response => {
+          if (await unpaired(response)) disconnected('设备授权已撤销，远程连接已断开。请重新扫码。')
+        }).catch(() => window.dispatchEvent(new Event('dsh-rc-offline')))
       })
     }
   }
@@ -84,29 +97,9 @@ function remoteBoot(): void {
     close(): void { this.readyState = 2; clearTimeout(this.timer); this.socket?.close() }
   }
   globals.EventSource = RemoteEventSource
-  // The official UI retains its behavior; touch layout changes are CSS-scoped.
-  document.addEventListener('DOMContentLoaded', () => {
-    document.documentElement.classList.add('dsh-rc-app')
-    document.addEventListener('keydown', event => {
-      const editable = event.target instanceof HTMLTextAreaElement || (event.target instanceof HTMLElement && event.target.isContentEditable)
-      if (matchMedia('(pointer:coarse) and (max-width:900px)').matches && event.key === 'Enter' && !event.isComposing && !event.ctrlKey && !event.metaKey && editable) event.stopImmediatePropagation()
-    }, true)
-  })
 }
 export const BOOT_SCRIPT = `(${remoteBoot.toString()})();`
-export const MOBILE_CSS = `
-html.dsh-rc-app{min-height:100%;overscroll-behavior:none}
-@media(pointer:coarse) and (max-width:900px){
-  .dsh-rc-app{touch-action:manipulation;--dsw-control-height:44px}
-  .dsh-rc-app input,.dsh-rc-app textarea,.dsh-rc-app select{font-size:16px!important}
-  .dsh-rc-app button{min-height:40px}
-  .dsh-rc-app [class$="_composerSeat"]{padding-bottom:max(10px,env(safe-area-inset-bottom))!important}
-  .dsh-rc-app [role="dialog"]{max-width:calc(100vw - 16px)!important;max-height:calc(100dvh - 24px)!important;overflow:auto}
-  .dsh-rc-app pre{max-width:100%;overflow:auto}
-  .dsh-rc-app [class$="_messageContent"]{overflow-wrap:anywhere}
-  .dsh-rc-app [role="tooltip"]{display:none!important}
-}
-`
 export function injectBoot(html: string): string {
-  return html.replace(/<head(?:\s[^>]*)?>/i, match => `${match}<script>${BOOT_SCRIPT.replace(/<\/script/gi, '<\\/script')}</script><style>${MOBILE_CSS}</style>`)
+  return html.replace(/<head(?:\s[^>]*)?>/i, match => `${match}<script>${BOOT_SCRIPT.replace(/<\/script/gi, '<\\/script')}</script>`)
 }
+

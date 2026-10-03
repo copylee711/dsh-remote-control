@@ -24,3 +24,5 @@ jobs:
       - run: pnpm test
       - run: pnpm build
       - run: npm pack --dry-run
+      - run: npm pack --dry-run --ignore-scripts --json > package-manifest.json
+      - run: node scripts/check-package.mjs package-manifest.json

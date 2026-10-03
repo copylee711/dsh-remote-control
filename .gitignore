@@ -5,3 +5,5 @@ lib/types/**/*.js.map
 *.tgz
 playwright-report/
 test-results/
+package-manifest.json
+lib/

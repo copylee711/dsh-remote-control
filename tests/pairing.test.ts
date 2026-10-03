@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { IDLE_MS, PairingService } from '../src/pairing.js'
+import { IDLE_MS, PairingService, deviceName } from '../src/pairing.js'
 const folders: string[] = []
 afterEach(() => { for (const folder of folders.splice(0)) rmSync(folder, { recursive: true, force: true }) })
 function fixture(onRevoke?: (id: string) => void) {
@@ -23,7 +23,7 @@ describe('pairing admission and durable revocation', () => {
     expect(() => service.claim(one.id, two.key)).toThrow()
     service.approve(one.id)
     const credential = service.claim(one.id, one.key).credential!
-    expect(service.authenticate(credential)?.name).toBe('Android 手机')
+    expect(service.authenticate(credential)?.name).toBe('Android')
     expect(service.claim(two.id, two.key).state).toBe('pending')
     expect(() => service.claim(one.id, one.key)).toThrow()
   })
@@ -65,4 +65,25 @@ describe('pairing admission and durable revocation', () => {
     service.approve(claim.id); service.revoke(service.list()[0]!.id)
     expect(() => service.claim(claim.id, claim.key)).toThrow()
   })
+})
+
+it('names a device by model or system and browser', () => {
+  expect(deviceName('Mozilla/5.0 (Linux; Android 14; V2309A Build/UP1A.231005.007) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36')).toBe('V2309A · Chrome')
+  expect(deviceName('Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36 EdgA/126.0')).toBe('Android · Edge')
+  expect(deviceName('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1')).toBe('iPhone · Safari')
+  expect(deviceName('')).toBe('远程设备')
+  // The model a browser reports on request wins over the reduced User-Agent.
+  expect(deviceName('Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 Chrome/126.0.0.0 Mobile Safari/537.36', 'V2309A<b>;')).toBe('V2309Ab · Chrome')
+})
+it('records the pairing address, renames, and prunes devices whose address is gone', () => {
+  const { service } = fixture()
+  const pair = (host: string) => { const claim = service.request(service.issue().token, 'Android', host); service.approve(claim.id); return service.claim(claim.id, claim.key).credential! }
+  const lan = pair('192.168.1.23:5173'), tunnel = pair('Old-Name.trycloudflare.com')
+  expect(service.list().map(device => device.host)).toEqual(['192.168.1.23:5173', 'old-name.trycloudflare.com'])
+  service.rename(lan.split('.')[0]!, '  我的手机  ')
+  expect(service.list()[0]!.name).toBe('我的手机')
+  expect(() => service.rename(lan.split('.')[0]!, ' ')).toThrow()
+  service.prune(device => !!device.host?.endsWith('.trycloudflare.com'))
+  expect(service.authenticate(tunnel)).toBeUndefined()
+  expect(service.authenticate(lan)?.name).toBe('我的手机')
 })

@@ -6,14 +6,16 @@ import { createRequire } from 'node:module'
 import { homedir, networkInterfaces } from 'node:os'
 import { dirname, extname, join, resolve, sep } from 'node:path'
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
-import { readFile } from 'node:fs/promises'
+import { readFile, stat } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
+import { fileURLToPath } from 'node:url'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import QRCode from 'qrcode'
 import { PairingService } from './pairing.js'
-import { Gateway, MANAGE_PATH } from './gateway.js'
+import { Gateway, MANAGE_PATH, REMOTE_MARK } from './gateway.js'
 import { TunnelManager } from './tunnel.js'
 import { body, isLoopback, json, sameOrigin } from './http.js'
+import { isAccent, type Accent } from './accent.js'
 
 export const name = '@copylee/dsh-remote-control'
 export const inject = ['connection']
@@ -22,8 +24,30 @@ export const Config = z.object({
 })
 export interface Config { gatewayPort?: number }
 type Mode = 'public' | 'lan' | 'fixed'
-interface Preferences { autoStart: boolean; mode: Mode; proxy?: string }
+interface Preferences { autoStart: boolean; mode: Mode; proxy?: string; accent: Accent }
 const mime: Record<string, string> = { '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2', '.webmanifest': 'application/manifest+json' }
+
+/** Adapters that are rarely the network a phone is on: virtual switches, VPN / proxy tunnels. */
+const VIRTUAL_ADAPTER = /vethernet|wsl|hyper-v|vmware|virtualbox|vbox|docker|loopback|tailscale|zerotier|tap|tun|vpn|clash|meta|wintun|utun|bluetooth/i
+
+/** This computer's IPv4 addresses, the ones a phone on the same network can most likely reach first. */
+export function lanAddresses(interfaces = networkInterfaces()): string[] {
+  const rows = Object.entries(interfaces).flatMap(([name, list]) => (list ?? []).filter(row => row.family === 'IPv4' && !row.internal).map(row => ({ name, address: row.address })))
+  const rank = (row: { name: string; address: string }) => {
+    const [a = 0, b = 0] = row.address.split('.').map(Number)
+    // Link-local and the 198.18/15 range used by TUN proxies are not reachable from a phone.
+    if ((a === 169 && b === 254) || (a === 198 && (b === 18 || b === 19))) return 3
+    if (VIRTUAL_ADAPTER.test(row.name)) return 2
+    return a === 192 && b === 168 || a === 10 || (a === 172 && b >= 16 && b <= 31) ? 0 : 1
+  }
+  const ranked = rows.map((row, index) => ({ row, index, rank: rank(row) })).sort((x, y) => x.rank - y.rank || x.index - y.index)
+  // Addresses no phone can reach are left out, unless there is nothing else.
+  const usable = ranked.filter(item => item.rank < 3)
+  return (usable.length ? usable : ranked).map(item => item.row.address)
+}
+
+/** A temporary public address: gone for good once its tunnel closes. */
+const isTemporaryHost = (host: string | undefined) => !!host && host.endsWith('.trycloudflare.com')
 
 /** Exchange the Host's launch token entirely inside the process. */
 export function hostCookie(connection: Context['connection'], port: number): string {
@@ -42,10 +66,16 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   const storage = join(process.env.DSH_HOME || join(homedir(), '.dsh'), 'dsh-remote-control', String(profile?.name || process.env.DSH_PROFILE || 'default').replace(/[^a-zA-Z0-9_-]/g, '_'))
   mkdirSync(storage, { recursive: true })
   const prefsFile = join(storage, 'preferences.json')
-  let preferences: Preferences = { autoStart: false, mode: 'public' }
+  let preferences: Preferences = { autoStart: false, mode: 'public', accent: 'orange' }
+  let error: string | undefined
   if (existsSync(prefsFile)) {
-    const stored = JSON.parse(readFileSync(prefsFile, 'utf8')) as Preferences
-    preferences = { autoStart: stored.autoStart === true, mode: ['public', 'lan', 'fixed'].includes(stored.mode) ? stored.mode : 'public', proxy: typeof stored.proxy === 'string' ? stored.proxy : undefined }
+    try {
+      const stored = JSON.parse(readFileSync(prefsFile, 'utf8')) as Partial<Preferences>
+      preferences = { autoStart: stored.autoStart === true, mode: ['public', 'lan', 'fixed'].includes(String(stored.mode)) ? stored.mode! : 'public', proxy: typeof stored.proxy === 'string' ? stored.proxy : undefined, accent: isAccent(stored.accent) ? stored.accent : 'orange' }
+    } catch {
+      // A damaged preferences file must not keep the plugin from loading; device authorizations live elsewhere.
+      error = '远程控制的偏好设置文件已损坏，已恢复默认设置（设备授权不受影响）。'
+    }
   }
   function savePreferences(): void {
     const temporary = `${prefsFile}.${randomUUID()}.tmp`
@@ -54,9 +84,10 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   let gateway: Gateway | undefined
   let tunnel: TunnelManager | undefined
   let enabled = false, busy = false, disposed = false
-  let error: string | undefined
+  let activeMode: Mode | undefined
+  let generation = 0
   let qr: { token: string; expiresAt: number } | undefined
-  const pairing = new PairingService({ file: join(storage, 'devices.json'), onRevoke: id => gateway?.revoke(id) })
+  const pairing = new PairingService({ file: join(storage, 'devices.json'), onRevoke: id => gateway?.revoke(id), isOnline: id => gateway?.onlineIds().includes(id) ?? false })
   const ownedServer = !ctx.get('webServer')
   if (ownedServer) ctx.plugin(WebServer, { host: '127.0.0.1', port: 0 })
   let shutdown: () => Promise<void> = async () => {}
@@ -68,8 +99,22 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     let credential = hostCookie(ready.connection, upstreamPort)
     const require = createRequire(import.meta.url)
     const distRoot = join(dirname(require.resolve('@deepseek-ai/dsh-web-frontend/package.json')), 'dist')
-    const renderIndex = async () => ready.webServer.renderIndex(await readFile(join(distRoot, 'index.html'), 'utf8'))
-    const asset = async (pathname: string, res: ServerResponse): Promise<boolean> => {
+    const renderIndex = async () => ready.webServer.renderIndex((await readFile(join(distRoot, 'index.html'), 'utf8')).replace(/<script type="module"[^>]*src="[^"]+"[^>]*><\/script>/, '<script type="module" src="/rc-assets/remote.js"></script><link rel="stylesheet" href="/rc-assets/style.css">').replace('<title>DeepSeek Harness</title>', '<title>DSH · 远程</title>'))
+    const asset = async (pathname: string, res: ServerResponse, req?: IncomingMessage): Promise<boolean> => {
+      if (pathname.startsWith('/rc-assets/')) {
+        const path = resolve(dirname(fileURLToPath(import.meta.url)), '.' + pathname.replace('/rc-assets/', '/'))
+        if (!/^\/rc-assets\/[a-zA-Z0-9_.-]+\.(js|css|woff2?|ttf)$/.test(pathname)) { res.writeHead(404).end(); return true }
+        try {
+          const info = await stat(path), etag = `"${info.size.toString(16)}-${Math.floor(info.mtimeMs).toString(16)}"`
+          // Chunks carry a content hash in their name. The entry and stylesheet do not, and must be
+          // revalidated: a stale entry after a plugin update would ask for chunks that no longer exist.
+          const hashed = /^\/rc-assets\/remote-.+-[A-Za-z0-9_-]{8}\.js$/.test(pathname)
+          const headers = { 'content-type': mime[extname(path)] ?? 'application/octet-stream', 'cache-control': hashed ? 'private, max-age=31536000, immutable' : 'private, no-cache', etag }
+          if (req?.headers['if-none-match'] === etag) { res.writeHead(304, headers).end(); return true }
+          const data = await readFile(path); res.writeHead(200, headers); res.end(data)
+        } catch { res.writeHead(404).end() }
+        return true
+      }
       if (!pathname.startsWith('/assets/') && !['/favicon.svg', '/favicon-dark.svg', '/manifest.webmanifest'].includes(pathname)) return false
       const path = resolve(distRoot, `.${decodeURIComponent(pathname)}`)
       if (!path.startsWith(resolve(distRoot) + sep)) { res.writeHead(403).end(); return true }
@@ -77,48 +122,79 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
       catch { res.writeHead(404).end() }
       return true
     }
-    const lanAddresses = () => Object.values(networkInterfaces()).flatMap(rows => rows ?? []).filter(row => row.family === 'IPv4' && !row.internal).map(row => row.address)
-    const baseURLs = () => !enabled || !gateway ? [] : preferences.mode === 'public' ? (tunnel?.phase === 'ready' && tunnel.url ? [tunnel.url] : []) : lanAddresses().map(ip => `http://${ip}:${gateway!.port}`)
+    const baseURLs = () => !enabled || !gateway ? [] : activeMode === 'public' ? (tunnel?.phase === 'ready' && tunnel.url ? [tunnel.url] : []) : lanAddresses().map(ip => `http://${ip}:${gateway!.port}`)
     const status = async (local: boolean) => {
       const links = baseURLs().map(base => ({ base, url: qr ? `${base}/pair#pair=${qr.token}` : undefined }))
       const active = new Set(gateway?.onlineIds() ?? [])
       return {
-        enabled, busy, mode: preferences.mode, autoStart: preferences.autoStart, proxyConfigured: !!preferences.proxy,
-        phase: enabled ? preferences.mode === 'public' ? tunnel?.phase ?? 'starting' : 'ready' : 'off',
-        error: error ?? tunnel?.error, gatewayPort: gateway?.port ?? 0, local,
+        enabled, busy, mode: preferences.mode, activeMode, autoStart: preferences.autoStart, proxyConfigured: !!preferences.proxy, accent: preferences.accent,
+        phase: enabled ? activeMode === 'public' ? tunnel?.phase ?? 'starting' : 'ready' : error ? 'error' : 'off',
+        error: error ?? tunnel?.error, warning: enabled && activeMode === 'public' ? tunnel?.warning : undefined, gatewayPort: gateway?.port ?? 0, local,
         expiresAt: qr?.expiresAt, links, qr: links[0]?.url ? await QRCode.toDataURL(links[0].url, { width: 260, margin: 2, errorCorrectionLevel: 'M' }) : undefined,
-        requests: local ? pairing.requests() : [], devices: pairing.list().map(device => ({ ...device, online: active.has(device.id) })),
+        requests: local ? pairing.requests() : [], devices: pairing.list().map(({ host, ...device }) => ({ ...device, via: host === undefined ? undefined : isTemporaryHost(host) ? 'public' : 'lan', online: active.has(device.id) })),
         fixedAvailable: false, fixedReason: '尚未找到已验证、允许第三方使用的免费固定入口服务。',
         lanHint: '手机需与电脑处于同一局域网。若连接被防火墙阻断，请手动允许网关端口；插件不会修改防火墙。',
       }
     }
     const stop = async () => {
-      enabled = false; qr = undefined; pairing.invalidate()
-      const current = gateway; gateway = undefined
-      await Promise.allSettled([tunnel?.stop(), current?.close()]); tunnel = undefined
+      ++generation
+      enabled = false; activeMode = undefined; qr = undefined; pairing.invalidate()
+      const current = gateway, currentTunnel = tunnel; gateway = undefined; tunnel = undefined
+      await Promise.allSettled([currentTunnel?.stop(), current?.close()])
+      // A device paired through a temporary public address holds a cookie for that address only.
+      // The address does not come back, so the record can never be used again.
+      pairing.prune(device => isTemporaryHost(device.host))
     }
     shutdown = stop
     const start = async () => {
       if (busy) throw new Error('连接操作正在进行，请稍后再试。')
-      if (preferences.mode === 'fixed') throw new Error('固定入口暂不可用，请选择临时公网或局域网。')
+      if (preferences.mode === 'fixed') throw new Error('这种连接方式暂不可用，请选择“同一 Wi‑Fi”或“任意网络”。')
       busy = true; error = undefined
+      let ticket: number | undefined
       try {
-        await stop(); if (disposed) return
+        const mode = preferences.mode, proxy = preferences.proxy
+        const stopping = stop(); ticket = generation
+        await stopping; if (disposed || ticket !== generation) return
         credential = hostCookie(ready.connection, upstreamPort)
-        const next = gateway = new Gateway({ pairing, upstreamPort, upstreamCookie: () => credential, manage, index: renderIndex, asset })
-        await next.listen(preferences.mode === 'lan' ? '0.0.0.0' : '127.0.0.1', config.gatewayPort ?? 0)
-        if (disposed) { await stop(); return }
-        for (const address of lanAddresses()) next.allowAuthority(`${address}:${next.port}`)
-        enabled = true; qr = pairing.issue()
-        if (preferences.mode === 'public') { tunnel = new TunnelManager(next); await tunnel.start(preferences.proxy) }
-      } catch (failure) { error = failure instanceof Error ? failure.message : '启动失败。'; await stop(); throw failure }
+        const next = gateway = new Gateway({ pairing, upstreamPort, upstreamCookie: () => credential, manage, index: renderIndex, asset, addresses: mode === 'lan' ? lanAddresses : undefined, accent: () => preferences.accent })
+        await next.listen(mode === 'lan' ? '0.0.0.0' : '127.0.0.1', config.gatewayPort ?? 0)
+        if (disposed || ticket !== generation) { await next.close(); return }
+        enabled = true; activeMode = mode; qr = pairing.issue()
+        if (mode === 'public') {
+          const currentTunnel = tunnel = new TunnelManager(next, message => {
+            if (ticket === generation && tunnel === currentTunnel) { error = message; void stop() }
+          }); await currentTunnel.start(proxy)
+          if (disposed || ticket !== generation) await currentTunnel.stop()
+        }
+      } catch (failure) { if (ticket === generation) { error = failure instanceof Error ? failure.message : '启动失败。'; await stop() }; throw failure }
       finally { busy = false }
     }
     async function manage(input: Record<string, unknown>, local: boolean): Promise<unknown> {
       switch (input.action) {
         case 'status': return status(local)
-        case 'start': await start(); return status(local)
-        case 'stop': setTimeout(() => { void stop() }, 75); return { stopped: true }
+        // What the always-mounted sidebar entry polls: no QR code is rendered for it.
+        case 'requests': return { enabled, accent: preferences.accent, requests: local ? pairing.requests() : [] }
+        case 'scheduleCapabilities': return { available: !!ready.get('schedule') }
+        case 'scheduleCreate': {
+          const service = ready.get('schedule') as { create(sessionId: string, request: unknown): Promise<unknown> } | undefined
+          if (!service) throw new Error('此宿主尚未启用自动化服务。请在插件管理中启用实验性自动化插件。')
+          if (typeof input.sessionId !== 'string' || !input.request || typeof input.request !== 'object') throw new Error('自动化请求格式不正确。')
+          // rc.2 exposes list/update/delete over Remote but no create RPC.
+          // Delegate directly to the existing Host service, retaining its validation,
+          // persistence and scheduling semantics; no second task database.
+          return service.create(input.sessionId, input.request)
+        }
+        case 'start': if (!enabled) await start(); return status(local)
+        case 'switch': {
+          if (busy) throw new Error('连接操作正在进行，请稍后再试。')
+          if (preferences.mode === activeMode && enabled && (activeMode === 'lan' || tunnel?.phase === 'ready')) return status(local)
+          if (local) { await start(); return status(local) }
+          busy = true
+          const ticket = generation
+          setTimeout(() => { busy = false; if (!disposed && ticket === generation) void start().catch(() => {}) }, 75)
+          return { switching: true, mode: preferences.mode }
+        }
+        case 'stop': if (local) await stop(); else { ++generation; setTimeout(() => { void stop() }, 75) }; return { stopped: true }
         case 'refresh': if (!enabled) throw new Error('请先开启远程连接。'); qr = pairing.issue(); return status(local)
         case 'approve': if (!local) throw new Error('首次配对必须在本机确认。'); pairing.approve(String(input.id)); return status(local)
         case 'reject': if (!local) throw new Error('配对请求由本机处理。'); pairing.reject(String(input.id)); return status(local)
@@ -128,18 +204,19 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
           setTimeout(() => { try { pairing.revoke(id) } catch { error = '撤销失败，授权文件未能保存；请在本机重试。' } }, 75)
           return { revoked: true }
         }
+        case 'rename': pairing.rename(String(input.id), String(input.name ?? '')); return status(local)
         case 'revokeAll': setTimeout(() => { try { pairing.revokeAll(); qr = undefined } catch { error = '撤销失败，请在本机重试。' } }, 75); return { revoked: true }
         case 'preferences': {
-          if (busy) throw new Error('请等待当前连接操作完成。')
+          if (busy && Object.keys(input).some(key => key !== 'action' && key !== 'accent')) throw new Error('请等待当前连接操作完成。')
           const next = { ...preferences }
           if (typeof input.autoStart === 'boolean') next.autoStart = input.autoStart
           if (input.mode !== undefined) { if (!['public', 'lan', 'fixed'].includes(String(input.mode))) throw new Error('连接模式不正确。'); next.mode = input.mode as Mode }
+          if (input.accent !== undefined) { if (!isAccent(input.accent)) throw new Error('强调色不正确。'); next.accent = input.accent }
           if (input.proxy !== undefined) {
             const value = String(input.proxy).trim()
             if (value) { const url = new URL(value); if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error('代理需为不带用户名和密码的 HTTP(S) 地址。'); }
             next.proxy = value || undefined
           }
-          if (next.mode !== preferences.mode && enabled) await stop()
           const previous = preferences; preferences = next
           try { savePreferences() } catch (failure) { preferences = previous; throw failure }
           return status(local)
@@ -149,7 +226,8 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     }
     const localHandler = async (req: IncomingMessage, res: ServerResponse) => {
       const rejection = ready.connection.requestRejection(req)
-      if (rejection || !isLoopback(req.socket.remoteAddress) || !sameOrigin(req)) { json(res, rejection ?? 403, { error: '本机面板需要宿主认证和本机连接。' }); return }
+      // The gateway is itself a loopback caller holding the Host session; what it forwards is never local.
+      if (rejection || req.headers[REMOTE_MARK] !== undefined || !isLoopback(req.socket.remoteAddress) || !sameOrigin(req)) { json(res, rejection ?? 403, { error: '本机面板需要宿主认证和本机连接。' }); return }
       if (req.method !== 'POST') { json(res, 405, { error: 'POST only' }); return }
       try { json(res, 200, await manage(await body(req), true)) }
       catch (failure) { json(res, 400, { error: failure instanceof Error ? failure.message : '操作失败。' }) }
@@ -158,6 +236,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     // Desktop's trusted IPC/Fetch carrier bypasses node:http. The outer gateway
     // handles this exact route itself and never forwards remote approval requests.
     ready.effect(() => ready.connection.fetch.register({ path: MANAGE_PATH, methods: ['POST'], requestBody: 'buffered', fetch: async request => {
+      if (request.headers.has(REMOTE_MARK)) return Response.json({ error: '本机面板需要宿主认证和本机连接。' }, { status: 403 })
       try { const input = await request.json(); return Response.json(await manage(input as Record<string, unknown>, true), { headers: { 'cache-control': 'no-store' } }) }
       catch (failure) { return Response.json({ error: failure instanceof Error ? failure.message : '操作失败。' }, { status: 400 }) }
     } }), 'remote-control Desktop management')
