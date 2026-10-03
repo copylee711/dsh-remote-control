@@ -1,3 +1,4 @@
+import { accentCSS } from '../accent.js'
 /**
  * The remote app's look: a chat client in the manner of the Claude and ChatGPT
  * phone apps. Round floating controls, a drawer of plain rows, a pill-shaped
@@ -6,9 +7,7 @@
 export const REMOTE_CSS = `
 :root{--rc-accent-hover:#c86748;--rc-bg:#faf9f5;--rc-paper:#fffefa;--rc-ink:#292724;--rc-muted:#77736c;--rc-line:#e4e0d8;--rc-accent:#d97757;--rc-accent-ink:#fff;--rc-soft:#f0ede6;--rc-danger:#b34337;--rc-shadow:0 1px 2px #2927240a,0 6px 24px #29272412;color-scheme:light}
 :root[data-rc-theme=dark]{--rc-bg:#242321;--rc-paper:#2d2b28;--rc-ink:#f0eee8;--rc-muted:#b5afa6;--rc-line:#454039;--rc-soft:#37332e;--rc-danger:#ef9181;--rc-shadow:0 1px 2px #0003,0 6px 24px #0000004d;color-scheme:dark}
-:root[data-rc-accent=blue]{--rc-accent:#3d63e6;--rc-accent-hover:#3354c8}
-:root[data-rc-accent=black]{--rc-accent:#1f1e1d;--rc-accent-hover:#3a3835}
-:root[data-rc-accent=black][data-rc-theme=dark]{--rc-accent:#f0eee8;--rc-accent-hover:#d8d4cc;--rc-accent-ink:#242321}
+${accentCSS(':root', ':root[data-rc-theme=dark]')}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body,#root{margin:0;width:100%;height:100%;overflow:hidden}
 body{background:var(--rc-bg);color:var(--rc-ink);font:16px/1.65 -apple-system,BlinkMacSystemFont,'Segoe UI','Microsoft YaHei',sans-serif}
@@ -152,7 +151,9 @@ fieldset.rc-card{border:1px solid var(--rc-line);box-shadow:none}
 .rc-dialog .rc-actions{justify-content:flex-end;margin-top:20px}
 .rc-app [hidden]{display:none!important}
 .rc-app .dsrc{font-family:inherit}
-.rc-app .dsrc input,.rc-app .dsrc button{min-height:44px}
+.rc-app .dsrc,.rc-app .dsrc[data-rc-accent]{--rc-accent:inherit;--rc-accent-ink:inherit}
+.rc-app .dsrc .dsrc-button,.rc-app .dsrc-input input{min-height:44px;border-radius:12px}
+.rc-app .dsrc button{box-shadow:none}
 .rc-app .dsrc .dsrc-mode{flex-wrap:wrap}
 
 @media(max-width:767px){

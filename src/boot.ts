@@ -13,7 +13,10 @@ function remoteBoot(): void {
     notice.style.cssText = `position:fixed;inset:0;z-index:2147483647;background:${dark ? 'rgba(36,35,33,.97)' : 'rgba(250,249,245,.97)'};display:flex;align-items:center;justify-content:center;padding:24px;font:16px/1.7 system-ui,sans-serif;text-align:center;color:${dark ? '#F0EEE8' : '#292724'}`
     const box = document.createElement('div'), text = document.createElement('p'), retry = document.createElement('button')
     text.textContent = message; retry.textContent = '重新连接'; retry.onclick = () => location.reload()
-    retry.style.cssText = 'padding:12px 20px;border:0;border-radius:10px;background:#D97757;color:white;font:inherit'
+    let accent = ''
+    try { accent = localStorage.getItem('dsrc-accent') ?? '' } catch { /* storage unavailable: default colour */ }
+    const fill = accent === 'blue' ? '#3D63E6' : accent === 'black' ? (dark ? '#F0EEE8' : '#1F1E1D') : '#D97757'
+    retry.style.cssText = `padding:12px 20px;border:0;border-radius:999px;background:${fill};color:${accent === 'black' && dark ? '#242321' : '#fff'};font:inherit`
     box.append(text, retry); notice.append(box); (document.body ?? document.documentElement).append(notice)
   }
   /** The gateway's own refusal. A 403 from the Host (a path it will not read, say) is an ordinary error. */

@@ -15,6 +15,7 @@ import { PairingService } from './pairing.js'
 import { Gateway, MANAGE_PATH, REMOTE_MARK } from './gateway.js'
 import { TunnelManager } from './tunnel.js'
 import { body, isLoopback, json, sameOrigin } from './http.js'
+import { isAccent, type Accent } from './accent.js'
 
 export const name = '@copylee/dsh-remote-control'
 export const inject = ['connection']
@@ -23,7 +24,7 @@ export const Config = z.object({
 })
 export interface Config { gatewayPort?: number }
 type Mode = 'public' | 'lan' | 'fixed'
-interface Preferences { autoStart: boolean; mode: Mode; proxy?: string }
+interface Preferences { autoStart: boolean; mode: Mode; proxy?: string; accent: Accent }
 const mime: Record<string, string> = { '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2', '.webmanifest': 'application/manifest+json' }
 
 /** Adapters that are rarely the network a phone is on: virtual switches, VPN / proxy tunnels. */
@@ -42,6 +43,9 @@ export function lanAddresses(interfaces = networkInterfaces()): string[] {
   return rows.map((row, index) => ({ row, index, rank: rank(row) })).sort((x, y) => x.rank - y.rank || x.index - y.index).map(item => item.row.address)
 }
 
+/** A temporary public address: gone for good once its tunnel closes. */
+const isTemporaryHost = (host: string | undefined) => !!host && host.endsWith('.trycloudflare.com')
+
 /** Exchange the Host's launch token entirely inside the process. */
 export function hostCookie(connection: Context['connection'], port: number): string {
   const base = `http://127.0.0.1:${port}/`
@@ -59,12 +63,12 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   const storage = join(process.env.DSH_HOME || join(homedir(), '.dsh'), 'dsh-remote-control', String(profile?.name || process.env.DSH_PROFILE || 'default').replace(/[^a-zA-Z0-9_-]/g, '_'))
   mkdirSync(storage, { recursive: true })
   const prefsFile = join(storage, 'preferences.json')
-  let preferences: Preferences = { autoStart: false, mode: 'public' }
+  let preferences: Preferences = { autoStart: false, mode: 'public', accent: 'orange' }
   let error: string | undefined
   if (existsSync(prefsFile)) {
     try {
       const stored = JSON.parse(readFileSync(prefsFile, 'utf8')) as Partial<Preferences>
-      preferences = { autoStart: stored.autoStart === true, mode: ['public', 'lan', 'fixed'].includes(String(stored.mode)) ? stored.mode! : 'public', proxy: typeof stored.proxy === 'string' ? stored.proxy : undefined }
+      preferences = { autoStart: stored.autoStart === true, mode: ['public', 'lan', 'fixed'].includes(String(stored.mode)) ? stored.mode! : 'public', proxy: typeof stored.proxy === 'string' ? stored.proxy : undefined, accent: isAccent(stored.accent) ? stored.accent : 'orange' }
     } catch {
       // A damaged preferences file must not keep the plugin from loading; device authorizations live elsewhere.
       error = '远程控制的偏好设置文件已损坏，已恢复默认设置（设备授权不受影响）。'
@@ -120,11 +124,11 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
       const links = baseURLs().map(base => ({ base, url: qr ? `${base}/pair#pair=${qr.token}` : undefined }))
       const active = new Set(gateway?.onlineIds() ?? [])
       return {
-        enabled, busy, mode: preferences.mode, activeMode, autoStart: preferences.autoStart, proxyConfigured: !!preferences.proxy,
+        enabled, busy, mode: preferences.mode, activeMode, autoStart: preferences.autoStart, proxyConfigured: !!preferences.proxy, accent: preferences.accent,
         phase: enabled ? activeMode === 'public' ? tunnel?.phase ?? 'starting' : 'ready' : error ? 'error' : 'off',
         error: error ?? tunnel?.error, warning: enabled && activeMode === 'public' ? tunnel?.warning : undefined, gatewayPort: gateway?.port ?? 0, local,
         expiresAt: qr?.expiresAt, links, qr: links[0]?.url ? await QRCode.toDataURL(links[0].url, { width: 260, margin: 2, errorCorrectionLevel: 'M' }) : undefined,
-        requests: local ? pairing.requests() : [], devices: pairing.list().map(device => ({ ...device, online: active.has(device.id) })),
+        requests: local ? pairing.requests() : [], devices: pairing.list().map(({ host, ...device }) => ({ ...device, via: host === undefined ? undefined : isTemporaryHost(host) ? 'public' : 'lan', online: active.has(device.id) })),
         fixedAvailable: false, fixedReason: '尚未找到已验证、允许第三方使用的免费固定入口服务。',
         lanHint: '手机需与电脑处于同一局域网。若连接被防火墙阻断，请手动允许网关端口；插件不会修改防火墙。',
       }
@@ -134,6 +138,9 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
       enabled = false; activeMode = undefined; qr = undefined; pairing.invalidate()
       const current = gateway, currentTunnel = tunnel; gateway = undefined; tunnel = undefined
       await Promise.allSettled([currentTunnel?.stop(), current?.close()])
+      // A device paired through a temporary public address holds a cookie for that address only.
+      // The address does not come back, so the record can never be used again.
+      pairing.prune(device => isTemporaryHost(device.host))
     }
     shutdown = stop
     const start = async () => {
@@ -146,7 +153,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
         const stopping = stop(); ticket = generation
         await stopping; if (disposed || ticket !== generation) return
         credential = hostCookie(ready.connection, upstreamPort)
-        const next = gateway = new Gateway({ pairing, upstreamPort, upstreamCookie: () => credential, manage, index: renderIndex, asset, addresses: mode === 'lan' ? lanAddresses : undefined })
+        const next = gateway = new Gateway({ pairing, upstreamPort, upstreamCookie: () => credential, manage, index: renderIndex, asset, addresses: mode === 'lan' ? lanAddresses : undefined, accent: () => preferences.accent })
         await next.listen(mode === 'lan' ? '0.0.0.0' : '127.0.0.1', config.gatewayPort ?? 0)
         if (disposed || ticket !== generation) { await next.close(); return }
         enabled = true; activeMode = mode; qr = pairing.issue()
@@ -162,6 +169,8 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     async function manage(input: Record<string, unknown>, local: boolean): Promise<unknown> {
       switch (input.action) {
         case 'status': return status(local)
+        // What the always-mounted sidebar entry polls: no QR code is rendered for it.
+        case 'requests': return { enabled, accent: preferences.accent, requests: local ? pairing.requests() : [] }
         case 'scheduleCapabilities': return { available: !!ready.get('schedule') }
         case 'scheduleCreate': {
           const service = ready.get('schedule') as { create(sessionId: string, request: unknown): Promise<unknown> } | undefined
@@ -192,12 +201,14 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
           setTimeout(() => { try { pairing.revoke(id) } catch { error = '撤销失败，授权文件未能保存；请在本机重试。' } }, 75)
           return { revoked: true }
         }
+        case 'rename': pairing.rename(String(input.id), String(input.name ?? '')); return status(local)
         case 'revokeAll': setTimeout(() => { try { pairing.revokeAll(); qr = undefined } catch { error = '撤销失败，请在本机重试。' } }, 75); return { revoked: true }
         case 'preferences': {
-          if (busy) throw new Error('请等待当前连接操作完成。')
+          if (busy && Object.keys(input).some(key => key !== 'action' && key !== 'accent')) throw new Error('请等待当前连接操作完成。')
           const next = { ...preferences }
           if (typeof input.autoStart === 'boolean') next.autoStart = input.autoStart
           if (input.mode !== undefined) { if (!['public', 'lan', 'fixed'].includes(String(input.mode))) throw new Error('连接模式不正确。'); next.mode = input.mode as Mode }
+          if (input.accent !== undefined) { if (!isAccent(input.accent)) throw new Error('强调色不正确。'); next.accent = input.accent }
           if (input.proxy !== undefined) {
             const value = String(input.proxy).trim()
             if (value) { const url = new URL(value); if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error('代理需为不带用户名和密码的 HTTP(S) 地址。'); }

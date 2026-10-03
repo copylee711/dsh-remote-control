@@ -8,6 +8,7 @@ import type { PairingService, Device } from './pairing.js'
 import { body, cookie, json, sameOrigin } from './http.js'
 import { deniedPage, pairingPage } from './pages.js'
 import { injectBoot } from './boot.js'
+import type { Accent } from './accent.js'
 
 export const MANAGE_PATH = '/api/dsh-remote-control/manage'
 /** Set by the gateway on every request it forwards; the Host's local-only handlers refuse it. */
@@ -22,6 +23,8 @@ export interface GatewayOptions {
   asset?: (path: string, res: ServerResponse, req: IncomingMessage) => Promise<boolean>
   /** Addresses this computer can currently be reached at (LAN mode); read on every request, since they change with the network. */
   addresses?: () => string[]
+  /** The accent colour the user chose, for the pages the gateway serves itself. */
+  accent?: () => Accent
 }
 export function safePath(path: string): boolean {
   if (!path.startsWith('/') || path.startsWith('//') || /[\x00-\x1f\\]/.test(path)) return false
@@ -93,14 +96,14 @@ export class Gateway {
       json(res, 200, { proof: this.proof }); return
     }
     if (url.pathname === '/pair' && req.method === 'GET') {
-      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'referrer-policy': 'no-referrer', 'x-frame-options': 'DENY' }); res.end(pairingPage()); return
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'referrer-policy': 'no-referrer', 'x-frame-options': 'DENY' }); res.end(pairingPage(this.options.accent?.())); return
     }
     if (url.pathname === '/rc/pair/request' || url.pathname === '/rc/pair/claim') {
       if (req.method !== 'POST' || !sameOrigin(req)) { json(res, 403, { error: '需要同源 POST 请求。' }); return }
       if (!this.rate(req)) { json(res, 429, { error: '请求过于频繁，请稍后再试。' }); return }
       try {
         const input = await body(req)
-        if (url.pathname.endsWith('/request')) json(res, 200, this.options.pairing.request(String(input.token ?? ''), req.headers['user-agent'] ?? ''))
+        if (url.pathname.endsWith('/request')) json(res, 200, this.options.pairing.request(String(input.token ?? ''), req.headers['user-agent'] ?? '', req.headers.host))
         else {
           const result = this.options.pairing.claim(String(input.id ?? ''), String(input.key ?? ''))
           if (result.credential) res.setHeader('set-cookie', this.cookieHeader(req, result.credential))
@@ -111,7 +114,7 @@ export class Gateway {
     }
     const device = this.device(req)
     if (!device) {
-      if (req.headers.accept?.includes('text/html') && req.method === 'GET') { res.writeHead(403, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }); res.end(deniedPage()) }
+      if (req.headers.accept?.includes('text/html') && req.method === 'GET') { res.writeHead(403, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }); res.end(deniedPage(this.options.accent?.())) }
       else json(res, 403, { error: '设备尚未配对或授权已撤销。', code: 'unpaired' })
       req.resume(); return
     }

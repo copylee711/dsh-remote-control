@@ -9,6 +9,7 @@ import * as Plugin from '../src/index.js'
 import { Gateway, MANAGE_PATH, REMOTE_MARK } from '../src/gateway.js'
 import { MAX_DEVICES, PairingService } from '../src/pairing.js'
 import { TunnelManager } from '../src/tunnel.js'
+import { deniedPage, pairingPage } from '../src/pages.js'
 
 const cleanup: Array<() => Promise<unknown> | void> = []
 afterEach(async () => { for (const fn of cleanup.splice(0).reverse()) await fn(); vi.restoreAllMocks() })
@@ -111,8 +112,19 @@ it('loads with default preferences when the file is damaged, and refuses forward
     await vi.waitFor(async () => expect((await call()).status).toBe(200))
     expect(await (await call()).json()).toMatchObject({ enabled: false, autoStart: false, mode: 'public', error: expect.stringContaining('偏好设置') })
     expect((await call({ [REMOTE_MARK]: '1' })).status).toBe(403)
+    // One accent colour for every surface of the plugin, kept with the preferences.
+    const prefer = (accent: string) => ctx.connection.createSharedFetchHandler('/api').fetch(new Request('http://desktop.internal' + MANAGE_PATH, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'preferences', accent }) }))
+    expect(await (await prefer('blue')).json()).toMatchObject({ accent: 'blue' })
+    expect((await prefer('pink')).status).toBe(400)
+    expect(await (await call()).json()).toMatchObject({ accent: 'blue' })
   } finally {
     ctx.registry.delete(Plugin); ctx.registry.delete(Connection); await new Promise(resolve => setTimeout(resolve, 100)); await remove()
     if (previous === undefined) delete process.env.DSH_HOME; else process.env.DSH_HOME = previous
   }
+})
+
+it('renders the pairing pages in the chosen accent colour', () => {
+  expect(pairingPage('black')).toContain('<html lang="zh-CN" data-rc-accent="black">')
+  expect(deniedPage()).toContain('data-rc-accent="orange"')
+  expect(pairingPage()).toContain(':root[data-rc-accent=blue]{--rc-accent:#3D63E6')
 })

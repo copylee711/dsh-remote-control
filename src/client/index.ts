@@ -1,12 +1,13 @@
 import * as React from 'react'
 import { CSS } from './style.js'
+import { ACCENTS, ACCENT_IDS, type Accent } from '../accent.js'
 const h = React.createElement
 const ROUTE = '/api/dsh-remote-control/manage'
 interface Status {
-  enabled: boolean; busy: boolean; mode: 'public' | 'lan' | 'fixed'; activeMode?: 'public' | 'lan' | 'fixed'; autoStart: boolean; proxyConfigured: boolean
+  enabled: boolean; busy: boolean; mode: 'public' | 'lan' | 'fixed'; activeMode?: 'public' | 'lan' | 'fixed'; autoStart: boolean; proxyConfigured: boolean; accent?: Accent
   phase: string; error?: string; warning?: string; gatewayPort: number; local: boolean; expiresAt?: number; qr?: string
   links: Array<{ base: string; url?: string }>; requests: Array<{ id: string; name: string; expiresAt: number }>
-  devices: Array<{ id: string; name: string; lastSeenAt: number; online: boolean }>; fixedReason: string; lanHint: string
+  devices: Array<{ id: string; name: string; createdAt: number; lastSeenAt: number; online: boolean; via?: 'lan' | 'public' }>; fixedReason: string; lanHint: string
 }
 interface ClientContext {
   effect(run: () => void | (() => void), label?: string): void
@@ -21,6 +22,25 @@ export async function command(input: Record<string, unknown>): Promise<Status> {
 }
 const phaseLabels: Record<string, string> = { off: '未开启', downloading: '下载连接组件', starting: '建立隧道', verifying: '验证公网连接', ready: '已开启', error: '连接失败' }
 function icon(): React.ReactNode { return h('svg', { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.6, 'aria-hidden': true }, h('rect', { x: 7, y: 2, width: 10, height: 20, rx: 3 }), h('path', { d: 'M10 5h4M11 19h2' })) }
+
+const when = (time: number) => new Date(time).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+
+/** One authorized device: where it paired, when it was used, a name the user can change. */
+function DeviceRow({ device, disabled, act }: { device: Status['devices'][number]; disabled: boolean; act: (action: string, fields?: Record<string, unknown>) => Promise<void> }): React.ReactElement {
+  const [name, setName] = React.useState<string | null>(null)
+  const save = () => { const next = name?.trim(); setName(null); if (next && next !== device.name) void act('rename', { id: device.id, name: next }) }
+  return h('div', { className: 'dsrc-device dsrc-row' },
+    h('div', { className: 'dsrc-device-main' },
+      name === null
+        ? h('div', { className: 'dsrc-device-name' }, device.name,
+          device.via ? h('span', { className: 'dsrc-tag' }, device.via === 'lan' ? '局域网' : '临时公网') : null,
+          device.online ? h('span', { className: 'dsrc-tag dsrc-online' }, '在线') : null)
+        : h('input', { className: 'dsrc-rename', 'aria-label': '设备名称', autoFocus: true, maxLength: 40, value: name, onChange: (event: React.ChangeEvent<HTMLInputElement>) => setName(event.target.value), onBlur: save, onKeyDown: (event: React.KeyboardEvent) => { if (event.key === 'Enter') save(); if (event.key === 'Escape') setName(null) } }),
+      h('div', { className: 'dsrc-muted' }, `配对于 ${when(device.createdAt)} · 最近使用 ${when(device.lastSeenAt)}`)),
+    h('div', { className: 'dsrc-actions' },
+      h('button', { type: 'button', className: 'dsrc-button dsrc-ghost', disabled, onClick: () => setName(device.name) }, '重命名'),
+      h('button', { type: 'button', className: 'dsrc-button dsrc-danger', disabled, onClick: () => { void act('revoke', { id: device.id }) } }, '撤销授权')))
+}
 
 export function RemoteControlPanel(): React.ReactElement {
   const [state, setState] = React.useState<Status | null>(null)
@@ -60,7 +80,7 @@ export function RemoteControlPanel(): React.ReactElement {
   const disabled = working || !!state?.busy
   const firstURL = state?.links[0]?.url
   const button = (label: string, action: string, fields?: Record<string, unknown>, extra = '') => h('button', { type: 'button', className: `dsrc-button ${extra}`, disabled, onClick: () => { void act(action, fields) } }, label)
-  return h('div', { className: 'dsrc', 'data-dsh-plugin': 'dsh-remote-control' },
+  return h('div', { className: 'dsrc', 'data-dsh-plugin': 'dsh-remote-control', 'data-rc-accent': state?.accent ?? 'orange' },
     h('header', { className: 'dsrc-head' }, h('div', null, h('h2', null, '远程控制'), h('p', { className: 'dsrc-sub' }, '扫码后在本机确认连接，继续会话与审批。')),
       h('span', { className: 'dsrc-badge', 'data-ready': state?.phase === 'ready' }, h('span', { className: 'dsrc-dot' }), phaseLabels[state?.phase ?? 'off'] ?? '读取状态')),
     h('section', { className: 'dsrc-surface' },
@@ -71,6 +91,9 @@ export function RemoteControlPanel(): React.ReactElement {
       state?.enabled ? h('p', { className: 'dsrc-note' }, '当前连接：', state.activeMode === 'lan' ? '局域网' : '临时公网', state.mode !== state.activeMode ? ` · 待切换：${state.mode === 'lan' ? '局域网' : '临时公网'}。切换会断开当前访问，请使用新入口重新连接。` : '') : null,
       h('div', { className: 'dsrc-actions' }, state?.enabled ? button('关闭连接', 'stop') : button('开启远程连接', 'start', {}, 'dsrc-primary'), state?.enabled && state.mode !== state.activeMode ? button(`切换到${state.mode === 'lan' ? '局域网' : '临时公网'}`, 'switch', {}, 'dsrc-primary') : null, state?.phase === 'error' && state.enabled ? button('重新连接', 'switch', {}, 'dsrc-primary') : null),
       h('label', { className: 'dsrc-toggle' }, h('input', { type: 'checkbox', checked: state?.autoStart ?? false, disabled, onChange: (event: React.ChangeEvent<HTMLInputElement>) => { void act('preferences', { autoStart: event.target.checked }) } }), '随 DSH 启动，自动开启所选连接方式'),
+      h('div', { className: 'dsrc-note' }, '强调色　', h('span', { className: 'dsrc-swatches', role: 'radiogroup', 'aria-label': '强调色' },
+        ...ACCENT_IDS.map(id => h('button', { key: id, type: 'button', className: 'dsrc-swatch', role: 'radio', 'aria-checked': (state?.accent ?? 'orange') === id, 'aria-label': ACCENTS[id].name, title: ACCENTS[id].name, style: { '--rc-swatch': ACCENTS[id].light.accent } as React.CSSProperties, onClick: () => { void act('preferences', { accent: id }) } }))),
+        '　电脑面板、配对页和手机界面共用'),
       state?.mode !== 'lan' ? h('details', { className: 'dsrc-proxy' }, h('summary', null, state?.proxyConfigured ? '电脑端代理 · 已配置' : '电脑端代理（可选）'), h('div', { className: 'dsrc-input' }, h('input', { 'aria-label': '电脑端代理地址', placeholder: 'http://127.0.0.1:7890', value: proxy, onChange: (event: React.ChangeEvent<HTMLInputElement>) => setProxy(event.target.value) }), button('保存代理', 'preferences', { proxy })), h('p', { className: 'dsrc-note' }, '留空使用已有环境代理。保存后重新连接生效，手机仍通过普通网络访问。开启穿透会下载并运行 Cloudflare 连接组件。')) : null,
     ),
     h('section', { className: 'dsrc-surface' }, h('div', { className: 'dsrc-row' }, h('h3', null, '扫码配对'), h('span', { className: 'dsrc-muted' }, expired ? '二维码已过期' : firstURL ? '5 分钟有效' : '等待连接就绪')),
@@ -82,20 +105,58 @@ export function RemoteControlPanel(): React.ReactElement {
     ),
     state?.local && state.requests.length ? h('section', { className: 'dsrc-surface' }, h('h3', null, '等待你确认'), ...state.requests.map(request => h('div', { className: 'dsrc-device dsrc-row', key: request.id }, h('div', null, h('div', { className: 'dsrc-device-name' }, request.name), h('div', { className: 'dsrc-muted' }, '允许后授予与本机相同的权限')), h('div', { className: 'dsrc-actions' }, button('拒绝', 'reject', { id: request.id }), button('允许连接', 'approve', { id: request.id }, 'dsrc-primary'))))) : null,
     h('section', { className: 'dsrc-surface' }, h('div', { className: 'dsrc-row' }, h('h3', null, '已授权设备'), state?.devices.length ? button('撤销全部', 'revokeAll', {}, 'dsrc-danger') : null),
-      state?.devices.length ? state.devices.map(device => h('div', { className: 'dsrc-device dsrc-row', key: device.id }, h('div', null, h('div', { className: 'dsrc-device-name' }, device.name, device.online ? ' · 在线' : ''), h('div', { className: 'dsrc-muted' }, '最近使用 ', new Date(device.lastSeenAt).toLocaleString('zh-CN'))), button('撤销授权', 'revoke', { id: device.id }, 'dsrc-danger'))) : h('p', { className: 'dsrc-empty' }, '还没有配对设备。扫码并确认后，设备会出现在这里。'),
-      h('p', { className: 'dsrc-note' }, '设备连续 30 天未使用后过期。关闭连接会保留授权；撤销授权会切断设备的现有连接。')),
+      state?.devices.length ? state.devices.map(device => h(DeviceRow, { key: device.id, device, disabled, act })) : h('p', { className: 'dsrc-empty' }, '还没有配对设备。扫码并确认后，设备会出现在这里。'),
+      h('p', { className: 'dsrc-note' }, '授权按访问地址分别保存：同一台手机通过局域网和临时公网连接，会各有一条记录。局域网的授权在 30 天未使用后过期；临时公网的地址每次开启都会变化，连接关闭后对应记录自动清除。')),
     error || state?.error ? h('div', { className: 'dsrc-error', role: 'alert' }, error || state?.error) : null,
     state?.warning ? h('p', { className: 'dsrc-note', role: 'status' }, state.warning) : null,
     notice ? h('p', { className: 'dsrc-note', role: 'status' }, notice) : null,
   )
 }
+interface Waiting { enabled: boolean; accent?: Accent; requests: Array<{ id: string; name: string; expiresAt: number }> }
+
+/** Pairing requests pop up on the computer as they arrive, so they are not missed while the panel is closed. */
+function PairingPrompt({ waiting, onDone }: { waiting: Waiting; onDone: () => void }): React.ReactElement | null {
+  const dialog = React.useRef<HTMLDialogElement>(null)
+  const [working, setWorking] = React.useState(false), [error, setError] = React.useState('')
+  const request = waiting.requests[0]
+  React.useEffect(() => {
+    const element = dialog.current
+    if (!element) return
+    if (request && !element.open) element.showModal()
+    if (!request && element.open) element.close()
+  }, [request?.id])
+  const answer = async (action: 'approve' | 'reject') => {
+    if (!request) return
+    setWorking(true); setError('')
+    try { await command({ action, id: request.id }) } catch (failure) { setError(failure instanceof Error ? failure.message : '操作失败。') }
+    finally { setWorking(false); onDone() }
+  }
+  return h('dialog', { className: 'dsrc-dialog dsrc-prompt', ref: dialog, onCancel: (event: React.SyntheticEvent) => event.preventDefault() },
+    request ? h('div', { className: 'dsrc', 'data-rc-accent': waiting.accent ?? 'orange' },
+      h('h2', null, '新的配对请求'),
+      h('p', { className: 'dsrc-prompt-device' }, request.name),
+      h('p', { className: 'dsrc-note' }, '这台设备扫描了远程控制二维码。允许后，它与本机拥有相同的权限，可以管理设置、凭据和插件。不是你本人操作请拒绝。'),
+      waiting.requests.length > 1 ? h('p', { className: 'dsrc-note' }, `还有 ${waiting.requests.length - 1} 个请求在等待。`) : null,
+      error ? h('div', { className: 'dsrc-error', role: 'alert' }, error) : null,
+      h('div', { className: 'dsrc-actions dsrc-prompt-actions' },
+        h('button', { type: 'button', className: 'dsrc-button', disabled: working, onClick: () => { void answer('reject') } }, '拒绝'),
+        h('button', { type: 'button', className: 'dsrc-button dsrc-primary', disabled: working, autoFocus: true, onClick: () => { void answer('approve') } }, '允许连接'))) : null)
+}
 function SidebarEntry(): React.ReactElement {
   const [open, setOpen] = React.useState(false), dialog = React.useRef<HTMLDialogElement>(null)
+  const [waiting, setWaiting] = React.useState<Waiting>({ enabled: false, requests: [] })
   React.useEffect(() => { if (open) dialog.current?.showModal(); else dialog.current?.close() }, [open])
+  const check = React.useCallback(async () => {
+    try { setWaiting(await command({ action: 'requests' }) as unknown as Waiting) } catch { /* the Host is restarting: ask again on the next tick */ }
+  }, [])
+  React.useEffect(() => { void check(); const timer = setInterval(() => { void check() }, 2500); return () => clearInterval(timer) }, [check])
+  const pending = waiting.requests.length > 0
   return h(React.Fragment, null,
-    h('button', { type: 'button', className: 'dsrc-entry', title: '远程控制', 'aria-label': '远程控制', onClick: () => setOpen(true) }, icon()),
+    h('button', { type: 'button', className: 'dsrc-entry', title: pending ? '远程控制 · 有配对请求' : '远程控制', 'aria-label': '远程控制', onClick: () => setOpen(true) }, icon(), pending ? h('span', { className: 'dsrc-entry-dot' }) : null),
     h('dialog', { className: 'dsrc-dialog', ref: dialog, onCancel: () => setOpen(false), onClick: (event: React.MouseEvent<HTMLDialogElement>) => { if (event.target === event.currentTarget) { const r = event.currentTarget.getBoundingClientRect(); if (event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom) setOpen(false) } } },
-      h('button', { type: 'button', className: 'dsrc-close', 'aria-label': '关闭远程控制面板', onClick: () => setOpen(false) }, '×'), open ? h(RemoteControlPanel) : null))
+      h('button', { type: 'button', className: 'dsrc-close', 'aria-label': '关闭远程控制面板', onClick: () => setOpen(false) }, '×'), open ? h(RemoteControlPanel) : null),
+    // The open panel lists the same requests itself.
+    open ? null : h(PairingPrompt, { waiting, onDone: () => { void check() } }))
 }
 export const inject = ['slots', 'connection']
 export function apply(ctx: ClientContext): void {

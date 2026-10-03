@@ -3,6 +3,8 @@ import { Chat } from './chat.js'
 import { Management } from './management.js'
 import { useStore, useAction, value, cacheText, cachedText, Boundary, type Host } from './common.js'
 import { Icon } from './icons.js'
+import { command } from '../client/index.js'
+import { ACCENTS, ACCENT_IDS, isAccent, type Accent } from '../accent.js'
 import { DialogViewport, ask, confirmAction } from './dialog.js'
 const h = React.createElement
 
@@ -12,8 +14,11 @@ export function App({ ctx }: { ctx: Host }): React.ReactElement {
   const [page, setPage] = React.useState('chat'), [drawer, setDrawer] = React.useState(false), [query, setQuery] = React.useState('')
   const [archived, setArchived] = React.useState(false), [searchIds, setSearchIds] = React.useState<string[]>()
   const [theme, setTheme] = React.useState(() => cachedText('dsrc-theme') || 'system')
-  const [accent, setAccent] = React.useState(() => cachedText('dsrc-accent') || 'orange')
+  // The colour is one setting for the whole plugin, kept by the Host; the cached copy only avoids a flash on load.
+  const [accent, setAccent] = React.useState<Accent>(() => { const cached = cachedText('dsrc-accent'); return isAccent(cached) ? cached : 'orange' })
   React.useEffect(() => { document.documentElement.dataset.rcAccent = accent; cacheText('dsrc-accent', accent) }, [accent])
+  React.useEffect(() => { void command({ action: 'status' }).then(status => { if (isAccent(status.accent)) setAccent(status.accent) }, () => {}) }, [])
+  const chooseAccent = (next: Accent) => { setAccent(next); void command({ action: 'preferences', accent: next }).catch(() => {}) }
   /** The settings section a drawer shortcut opens directly ('' = the category list). */
   const [start, setStart] = React.useState(''), [searching, setSearching] = React.useState(false)
   const action = useAction()
@@ -94,8 +99,8 @@ export function App({ ctx }: { ctx: Host }): React.ReactElement {
         h('select', { className: 'rc-theme', 'aria-label': '界面主题', value: theme, onChange: (e: React.ChangeEvent<HTMLSelectElement>) => setTheme(e.target.value) },
           h('option', { value: 'system' }, '跟随系统'), h('option', { value: 'light' }, '浅色'), h('option', { value: 'dark' }, '深色')),
         h('div', { className: 'rc-swatches', role: 'radiogroup', 'aria-label': '强调色' },
-          ...([['orange', '陶土橙'], ['blue', '蓝色'], ['black', '黑色']] as const).map(([id, name]) =>
-            h('button', { key: id, className: 'rc-swatch', role: 'radio', 'aria-checked': accent === id, 'aria-label': name, title: name, 'data-accent': id, onClick: () => setAccent(id) })))),
+          ...ACCENT_IDS.map(id =>
+            h('button', { key: id, className: 'rc-swatch', role: 'radio', 'aria-checked': accent === id, 'aria-label': ACCENTS[id].name, title: ACCENTS[id].name, 'data-accent': id, onClick: () => chooseAccent(id) })))),
       h('div', { className: 'rc-row' },
         h('button', { className: 'rc-primary rc-new', disabled: action.busy, onClick: () => { void create() } }, h(Icon, { name: 'compose' }), '新会话'),
         round('settings', '设置与管理', () => go('settings')))))
