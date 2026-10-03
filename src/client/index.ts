@@ -84,7 +84,7 @@ export function RemoteControlPanel(): React.ReactElement {
     catch { setNotice('浏览器不允许自动复制，请选中下面的链接手动复制。') }
   }
   const expired = !!state?.expiresAt && Date.now() >= state.expiresAt
-  const proxyMode = state?.proxyMode ?? 'system'
+  const proxyMode = state?.proxyMode ?? 'off'
   // The code is a one-time ticket for pairing a new device, valid for five minutes; devices already
   // paired do not depend on it. While the panel is open it is renewed, unless a device is mid-pairing.
   const renewing = React.useRef(false)
@@ -135,11 +135,11 @@ export function RemoteControlPanel(): React.ReactElement {
       shown !== 'lan' ? h('details', { className: 'dsrc-proxy' },
         h('summary', null, `电脑访问外网的代理 · ${proxyMode === 'system' ? (state?.systemProxy ? '自动检测到系统代理' : '自动检测（当前没有）') : proxyMode === 'manual' ? '手动填写' : '不使用'}`),
         h('div', { className: 'dsrc-mode dsrc-routes', role: 'group', 'aria-label': '代理方式', style: { margin: '10px 0 0' } },
-          ...([['system', '自动检测系统代理'], ['manual', '手动填写'], ['off', '不使用']] as const).map(([id, name]) =>
+          ...([['off', '不使用'], ['system', '自动检测系统代理'], ['manual', '手动填写']] as const).map(([id, name]) =>
             h('button', { key: id, type: 'button', 'aria-pressed': proxyMode === id, disabled, onClick: () => { void act('preferences', { proxyMode: id }) } }, name))),
         proxyMode === 'system' ? h('p', { className: 'dsrc-note' }, state?.systemProxy ? `检测到 ${state.systemProxy.url}（${state.systemProxy.source}），开启时会用它。` : '没有检测到系统代理，开启时直接连接。开了代理软件却没检测到的话，请在代理软件里打开“系统代理”，或改用手动填写。') : null,
         proxyMode === 'manual' ? h('div', { className: 'dsrc-input' }, h('input', { 'aria-label': '电脑端代理地址', placeholder: state?.manualProxy || 'http://127.0.0.1:7890', value: proxy, onChange: (event: React.ChangeEvent<HTMLInputElement>) => setProxy(event.target.value) }), button('保存', 'preferences', { proxy: proxy || state?.manualProxy || '' })) : null,
-        h('p', { className: 'dsrc-note' }, '“任意网络”需要这台电脑能访问 Cloudflare；手机不需要代理。改动在下次开启时生效。首次开启会下载 Cloudflare 的连接组件。')) : null,
+        h('p', { className: 'dsrc-note' }, '默认不使用代理。只有直接连不上 Cloudflare 时才需要打开；走代理反而连不上的话（代理出口被 Cloudflare 拒绝），请改回“不使用”。手机不需要代理。改动在下次开启时生效。')) : null,
     ),
     h('section', { className: 'dsrc-surface' }, h('div', { className: 'dsrc-row' }, h('h3', null, '扫码配对'), h('span', { className: 'dsrc-muted' }, expired ? '正在更新二维码' : firstURL ? '只用于添加新设备 · 自动更新' : '等待连接就绪')),
       h('div', { className: 'dsrc-pair' }, state?.qr && !expired

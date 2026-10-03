@@ -73,14 +73,15 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   const storage = join(process.env.DSH_HOME || join(homedir(), '.dsh'), 'dsh-remote-control', String(profile?.name || process.env.DSH_PROFILE || 'default').replace(/[^a-zA-Z0-9_-]/g, '_'))
   mkdirSync(storage, { recursive: true })
   const prefsFile = join(storage, 'preferences.json')
-  let preferences: Preferences = { autoStart: false, mode: 'public', proxyMode: 'system', accent: 'orange', route: 'cloudflare' }
+  let preferences: Preferences = { autoStart: false, mode: 'public', proxyMode: 'off', accent: 'orange', route: 'cloudflare' }
   let error: string | undefined
   if (existsSync(prefsFile)) {
     try {
       const stored = JSON.parse(readFileSync(prefsFile, 'utf8')) as Partial<Preferences>
       preferences = { autoStart: stored.autoStart === true, mode: ['public', 'lan', 'fixed'].includes(String(stored.mode)) ? stored.mode! : 'public', proxy: typeof stored.proxy === 'string' ? stored.proxy : undefined,
-        // Before there was a choice, an address meant "use this" and none meant "whatever the system has".
-        proxyMode: isProxyMode(stored.proxyMode) ? stored.proxyMode : stored.proxy ? 'manual' : 'system', port: Number.isInteger(stored.port) && stored.port! > 0 && stored.port! < 65536 ? stored.port : undefined, accent: isAccent(stored.accent) ? stored.accent : 'orange', route: isRoute(stored.route) ? stored.route : 'cloudflare' }
+        // No proxy unless asked for: a proxy's exit address is often one Cloudflare refuses, while the direct
+        // route works. An address typed in before there was a choice still counts as asked for.
+        proxyMode: isProxyMode(stored.proxyMode) ? stored.proxyMode : stored.proxy ? 'manual' : 'off', port: Number.isInteger(stored.port) && stored.port! > 0 && stored.port! < 65536 ? stored.port : undefined, accent: isAccent(stored.accent) ? stored.accent : 'orange', route: isRoute(stored.route) ? stored.route : 'cloudflare' }
     } catch {
       // A damaged preferences file must not keep the plugin from loading; device authorizations live elsewhere.
       error = '远程控制的偏好设置文件已损坏，已恢复默认设置（设备授权不受影响）。'
