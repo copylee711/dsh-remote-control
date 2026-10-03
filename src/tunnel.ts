@@ -128,12 +128,17 @@ export class TunnelManager {
     this.checking = true
     let healthy = false
     try {
-      const init = { signal: AbortSignal.timeout(10000), redirect: 'error' as const }
-      const response = this.proxy
-        ? await tunnelFetch(this.gateway.healthURL(this.url), { ...init, dispatcher: this.proxy })
-        : await fetch(this.gateway.healthURL(this.url), init)
-      healthy = response.ok && this.gateway.verifyHealth(await response.json())
-      if (!healthy) this.lastFailure = response.ok ? '网关验证信息不匹配' : `HTTP ${response.status}`
+      const address = this.gateway.healthURL(this.url)
+      const ask = async (viaProxy: boolean) => {
+        const init = { signal: AbortSignal.timeout(10000), redirect: 'error' as const }
+        const response = viaProxy && this.proxy ? await tunnelFetch(address, { ...init, dispatcher: this.proxy }) : await fetch(address, init)
+        const ok = response.ok && this.gateway.verifyHealth(await response.json())
+        if (!ok) this.lastFailure = response.ok ? '网关验证信息不匹配' : `HTTP ${response.status}`
+        return ok
+      }
+      // Either way out will do: this only asks whether the address reaches the gateway, and a proxy
+      // that Cloudflare turns away says nothing about that.
+      healthy = this.proxy ? await ask(true).catch(() => false) || await ask(false) : await ask(false)
     } catch (failure) {
       const code = (failure as { cause?: { code?: string }; name?: string }).cause?.code
       this.lastFailure = code && /^[A-Z_0-9]+$/.test(code) ? code : (failure as Error).name === 'TimeoutError' ? '请求超时' : '网络请求失败'
