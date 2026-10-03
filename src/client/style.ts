@@ -65,6 +65,14 @@ export const CSS = `
 
 .dsrc-pair{display:grid;grid-template-columns:168px 1fr;gap:20px;align-items:center;margin-top:14px}
 .dsrc-code{width:168px;aspect-ratio:1;border-radius:12px;background:#fff;display:grid;place-items:center;overflow:hidden;border:1px solid var(--rc-line)}
+.dsrc .dsrc-code-button{position:relative;padding:0;cursor:pointer}
+.dsrc-code-hint{position:absolute;inset:0;display:grid;place-items:center;background:#ffffffd9;color:#292724;font-size:13px;font-weight:600;opacity:0;transition:opacity .15s}
+.dsrc-code-button:hover:not(:disabled) .dsrc-code-hint,.dsrc-code-button:focus-visible .dsrc-code-hint{opacity:1}
+.dsrc .dsrc-link-button{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;border:0;text-align:left;cursor:pointer;user-select:text}
+.dsrc-link-button>span:first-child{min-width:0;overflow-wrap:anywhere}
+.dsrc-link-hint{flex-shrink:0;font:12px/1.5 inherit;font-family:inherit;color:var(--rc-muted);opacity:0;transition:opacity .15s}
+.dsrc-link-button:hover .dsrc-link-hint,.dsrc-link-button:focus-visible .dsrc-link-hint{opacity:1}
+.dsrc-link-button:hover{background:color-mix(in srgb,var(--rc-ink) 10%,transparent)}
 .dsrc-code img{width:100%;height:100%;display:block}
 .dsrc-placeholder{width:100%;height:100%;display:grid;place-items:center;text-align:center;white-space:pre-line;padding:16px;font-size:12px;color:#77736c;background:repeating-linear-gradient(45deg,#f6f4ef 0 8px,#fbfaf7 8px 16px)}
 .dsrc-steps{display:grid;gap:10px}

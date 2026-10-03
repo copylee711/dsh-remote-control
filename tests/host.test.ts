@@ -75,7 +75,9 @@ it('explicitly switches entries, invalidates the old entry, and can retry a fail
   await command('preferences', { mode: 'lan' }); const lan = await command('start')
   await command('preferences', { mode: 'public' }); const publicEntry = await command('switch')
   expect(publicEntry).toMatchObject({ activeMode: 'public', phase: 'ready', mode: 'public' })
-  await expect(fetch(`http://127.0.0.1:${lan.gatewayPort}/`)).rejects.toThrow()
+  // The port is kept across the switch (a phone's bookmark keeps working), but what answers there now
+  // is the new entry: nothing of the old one is served.
+  expect(await fetch(`http://127.0.0.1:${lan.gatewayPort}/`).then(response => response.status, () => 0)).not.toBe(200)
   await command('preferences', { mode: 'lan' }); const switched = await command('switch')
   expect(switched).toMatchObject({ activeMode: 'lan', enabled: true, phase: 'ready' })
   expect(switched.links[0].url).not.toBe(lan.links[0].url)
@@ -115,7 +117,7 @@ it('acknowledges an authorized remote switch before terminating its old entry', 
   await remote.manage('preferences', { mode: 'public' })
   expect(await remote.manage('switch')).toMatchObject({ switching: true, mode: 'public', status: 200 })
   await vi.waitFor(async () => expect(await command('status')).toMatchObject({ activeMode: 'public', phase: 'ready' }))
-  await expect(fetch(remote.base + '/')).rejects.toThrow()
+  expect(await fetch(remote.base + '/').then(response => response.status, () => 0)).not.toBe(200)
   expect((await command('status')).devices).toHaveLength(1)
 }))
 
