@@ -176,6 +176,10 @@ input[type=checkbox],input[type=radio]{width:22px;height:22px;padding:0;accent-c
 .rc-picker-option{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;text-align:left;background:transparent;border-radius:14px;padding:12px 14px;min-height:48px;font-size:16px}
 .rc-picker-option[aria-selected=true]{background:var(--rc-soft);font-weight:600}
 .rc-picker-option svg{color:var(--rc-accent)}
+.rc-picker-more{margin-top:6px;border-top:1px solid var(--rc-line);border-radius:0;color:var(--rc-muted)}
+.rc-picker-more svg{color:var(--rc-muted)}
+.rc-menu-note{padding:10px 14px 4px}
+.rc-session{-webkit-touch-callout:none;user-select:none}
 .rc-picker-label{min-width:0;overflow-wrap:anywhere}
 .rc-picker-label small{display:block;font-size:13px;font-weight:400;color:var(--rc-muted)}
 @keyframes rc-rise{from{transform:translateY(24px);opacity:0}}

@@ -82,8 +82,31 @@ export function App({ ctx }: { ctx: Host }): React.ReactElement {
     const timer = setTimeout(() => { void ctx.sessions.search(query, controller.signal).then((result: any) => { if (!controller.signal.aborted) setSearchIds(value(result).items.map((s: any) => s.sessionId ?? s.id)) }, () => {}) }, 350)
     return () => { clearTimeout(timer); controller.abort() }
   }, [ctx, query])
+  /** An untouched session has no title of its own yet (the Host labels it with the workspace's name). */
+  const titleOf = (id: string | undefined) => { const row = sessions.byId?.[id || '']; return !row || row.blank ? '新会话' : row.displayTitle || row.title || '新会话' }
   const select = (id: string) => { setSessionId(id); setPage('chat'); setDrawer(false) }
-  const create = () => { setDrawer(false); return action.run(async () => { const id = await ctx.sessions.create(workspaceId ? { workspaceId } : {}); setArchived(false); select(id) }, '新会话已创建') }
+  const create = () => {
+    setDrawer(false)
+    // An untouched new session is reused, as on the computer, instead of piling up another one.
+    const unused = (sessions.ids ?? []).find((id: string) => sessions.byId[id]?.blank && !workspaces.archivedSessionIds?.includes(id) && (!workspace || workspace.sessionIds.includes(id)))
+    if (unused) { setArchived(false); select(unused); return Promise.resolve() }
+    return action.run(async () => { const id = await ctx.sessions.create(workspaceId ? { workspaceId } : {}); setArchived(false); select(id) }, '')
+  }
+  // Long press (or right click) on a session opens what can be done with it.
+  const [menuFor, setMenuFor] = React.useState<string>()
+  const press = React.useRef<{ timer?: ReturnType<typeof setTimeout>; fired: boolean }>({ fired: false })
+  const hold = (id: string) => ({
+    onPointerDown: () => { press.current.fired = false; clearTimeout(press.current.timer); press.current.timer = setTimeout(() => { press.current.fired = true; setMenuFor(id) }, 520) },
+    onPointerUp: () => clearTimeout(press.current.timer), onPointerLeave: () => clearTimeout(press.current.timer), onPointerCancel: () => clearTimeout(press.current.timer),
+    onContextMenu: (event: React.MouseEvent) => { event.preventDefault(); clearTimeout(press.current.timer); press.current.fired = true; setMenuFor(id) },
+    onClick: () => { if (press.current.fired) { press.current.fired = false; return } select(id) },
+  })
+  const menuDialog = React.useRef<HTMLDialogElement>(null)
+  React.useEffect(() => { const element = menuDialog.current; if (!element) return; if (menuFor && !element.open) element.showModal(); if (!menuFor && element.open) element.close() }, [menuFor])
+  useBackClose(!!menuFor, () => setMenuFor(undefined))
+  const menuArchived = !!menuFor && !!workspaces.archivedSessionIds?.includes(menuFor)
+  const menuTitle = menuFor ? titleOf(menuFor) : ''
+  const menuAct = (run: (id: string) => void) => () => { const id = menuFor; setMenuFor(undefined); if (id) run(id) }
   const selected = sessions.byId?.[sessionId || '']
   const selectedArchived = !!workspaces.archivedSessionIds?.includes(sessionId)
   const workspace = workspaces.items?.find((item: Host) => item.workspaceId === workspaceId)
@@ -102,7 +125,7 @@ export function App({ ctx }: { ctx: Host }): React.ReactElement {
   useBackClose(page !== 'chat', () => setPage('chat'))
   useBackClose(drawer, () => setDrawer(false))
   const go = (next: string, section = '') => { setPage(next); setStart(section); setDrawer(false) }
-  const title = page === 'chat' ? selected?.displayTitle || selected?.title || '新会话'
+  const title = page === 'chat' ? titleOf(sessionId)
     : page === 'files' ? '文件与交付物'
     : page === 'session' ? '会话操作'
     : start === 'automation' ? '定时任务' : start === 'plugins' ? '插件' : '设置与管理'
@@ -123,13 +146,13 @@ export function App({ ctx }: { ctx: Host }): React.ReactElement {
       nav('clock', '定时任务', () => go('settings', 'automation'), page === 'settings' && start === 'automation'),
       nav('plug', '插件', () => go('settings', 'plugins'), page === 'settings' && start === 'plugins'),
       nav('archive', archived ? '返回最近会话' : '已归档会话', () => setArchived(!archived), archived)),
-    (workspaces.items ?? []).length > 1 ? h(Picker, { className: 'rc-workspace', label: '工作区', value: workspaceId, onChange: setWorkspaceId,
+    (workspaces.items ?? []).length ? h(Picker, { className: 'rc-workspace', label: '工作区', value: workspaceId, onChange: setWorkspaceId, more: { label: '添加或管理工作区', onSelect: () => go('settings', 'workspaces') },
       choices: (workspaces.items ?? []).map((w: any) => ({ value: w.workspaceId, label: w.title || w.path })) }) : null,
     h('hr', { className: 'rc-divider' }),
     h('div', { className: 'rc-session-list' },
-      ...ids.map((id: string) => h('button', { key: id, className: 'rc-session', 'aria-current': sessionId === id && page === 'chat', onClick: () => select(id) },
+      ...ids.map((id: string) => h('button', { key: id, className: 'rc-session', 'aria-current': sessionId === id && page === 'chat', ...hold(id) },
         sessions.byId[id]?.running ? h('span', { className: 'rc-running', 'aria-label': '执行中' }) : null,
-        sessions.byId[id]?.displayTitle || sessions.byId[id]?.title || '新会话')),
+        titleOf(id))),
       ids.length ? null : h('p', { className: 'rc-muted rc-empty' }, archived ? '没有归档会话' : query ? '没有匹配的会话' : '还没有会话')),
     h('div', { className: 'rc-sidebar-footer' },
       h('div', { className: 'rc-row' },
@@ -152,8 +175,16 @@ export function App({ ctx }: { ctx: Host }): React.ReactElement {
       h('button', { className: 'rc-menu-row', onClick: () => { void action.run(async () => { const id = await ctx.sessions.fork({ sessionId }); select(id) }, '已创建分支会话') } }, '创建分支')),
     action.notice ? h('p', { className: 'rc-notice', role: 'status' }, action.notice) : null))
 
+  const sessionMenu = h('dialog', { ref: menuDialog, className: 'rc-picker-sheet', 'aria-label': '会话操作', onCancel: () => setMenuFor(undefined), onClick: (event: React.MouseEvent) => { if (event.target === event.currentTarget) setMenuFor(undefined) } },
+    menuFor ? h('div', { className: 'rc-picker-body' },
+      h('div', { className: 'rc-picker-title' }, menuTitle),
+      h('button', { className: 'rc-picker-option', onClick: menuAct(async id => { const next = await ask('会话名称', sessions.byId?.[id]?.displayTitle || ''); if (next?.trim()) void action.run(() => ctx.remote.session.rename({ sessionId: id, title: next.trim() }), '') }) }, '重命名'),
+      h('button', { className: 'rc-picker-option', onClick: menuAct(id => { void action.run(() => menuArchived ? ctx.workspaces.unarchiveSession(id) : ctx.workspaces.archiveSession(id), '') }) }, menuArchived ? '恢复到会话列表' : '归档'),
+      h('button', { className: 'rc-picker-option', onClick: menuAct(id => { void action.run(async () => { const child = await ctx.sessions.fork({ sessionId: id }); select(child) }, '') }) }, '创建分支'),
+      h('p', { className: 'rc-muted rc-menu-note' }, '宿主没有提供删除会话的接口；不想再看到的会话可以归档。')) : null)
+
   return h('div', { className: 'rc-app' },
-    h(DialogViewport),
+    h(DialogViewport), sessionMenu,
     h('button', { className: `rc-backdrop ${drawer ? 'open' : ''}`, 'aria-label': '关闭会话列表', onClick: () => setDrawer(false) }),
     sidebar,
     h('main', { className: 'rc-main' },

@@ -26,3 +26,26 @@
 ## 发布
 
 根据 [npm 官方 Trusted Publisher 文档](https://docs.npmjs.com/trusted-publishers/)与 npm CLI OIDC 文档，后续发布使用 GitHub 托管 runner、Node 24、npm 11 最新版本、`id-token: write` 及 provenance。首次本地发布之后由包拥有者配置 Trusted Publisher。
+
+## 备用公网线路（2026-10-03 实测，0.2.1）
+
+用一个本地回显服务逐个测试，测试机在中国大陆、未经代理：
+
+| 服务 | 结果 |
+|---|---|
+| localtunnel 2.0.2 | 分配到地址，但请求返回 502；浏览器访问会先看到要求输入"隧道密码"的拦截页。不采用。 |
+| tunnelmole 2.4.0 | HTTP 可用；WebSocket 握手返回 200 而不是 101，不支持。DSH 的核心通信走 `/api/remote.mux` WebSocket，不采用。 |
+| pinggy.io（SSH） | HTTP 与 WebSocket 可用；浏览器访问有拦截页，免费通道 60 分钟断开。不采用。 |
+| localhost.run（SSH） | 免注册，用系统自带的 ssh，不下载程序；HTTP 与 WebSocket 可用，无拦截页。**速度约 20 KB/s**（600 KB 用了 28 秒，经代理访问也一样，瓶颈在电脑到该服务的 SSH 连接）。网关加了 gzip 之后，远程界面首次打开仍需约 3 分 24 秒。 |
+
+结论：localhost.run 作为手动选择的备用线路加入，不做自动切换——它能连上，但慢到会被当成故障。Cloudflare 仍是默认。
+
+网关对文本类响应启用 gzip 是这次测试带来的改动，对所有线路都有效：电脑的上行是每条远程连接里最窄的一段。
+
+## 固定入口的可行做法（未实现）
+
+固定入口指地址不变、手机不用每次重新扫码。免注册的免费服务里没有能做到的；可行的都需要用户自己的账号：
+
+- Cloudflare 具名隧道：需要 Cloudflare 账号和一个托管在其上的域名，用隧道令牌运行已下载的 cloudflared。地址固定，WebSocket 可用。
+- ngrok：免费账号附带一个固定域名，需要 authtoken；免费版对浏览器有一次性提示页。
+- localhost.run：注册并登记 SSH 公钥后域名保持更久，速度问题不变。

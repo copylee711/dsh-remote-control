@@ -14,6 +14,15 @@ export function isLoopback(value: string | undefined): boolean { return value ==
 export function cookie(req: IncomingMessage, name = 'dsh_rc'): string | undefined {
   return req.headers.cookie?.split(';').map(v => v.trim()).find(v => v.startsWith(`${name}=`))?.slice(name.length + 1)
 }
+/**
+ * Text travels compressed. The computer's upload is the narrow part of every remote connection,
+ * and the app's scripts are several megabytes before compression.
+ */
+export function gzipFor(req: IncomingMessage | undefined, type: string | undefined): boolean {
+  if (!req || !/\bgzip\b/.test(String(req.headers['accept-encoding'] ?? ''))) return false
+  // An event stream must reach the browser as it is written.
+  return !!type && !type.includes('event-stream') && /^(text\/|application\/(javascript|json|manifest\+json|xml)|image\/svg)/.test(type)
+}
 export function sameOrigin(req: IncomingMessage): boolean {
   if (!req.headers.origin) return req.headers['sec-fetch-site'] !== 'cross-site'
   try { return new URL(req.headers.origin).host === req.headers.host } catch { return false }

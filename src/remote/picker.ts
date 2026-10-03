@@ -10,9 +10,11 @@ const h = React.createElement
 
 export interface Choice { value: string; label: string; group?: string; hint?: string; disabled?: boolean }
 
-export function Picker({ label, value, choices, onChange, disabled, className = '', placeholder = '请选择', title }: {
+export function Picker({ label, value, choices, onChange, disabled, className = '', placeholder = '请选择', title, more }: {
   label: string; value: string; choices: Choice[]; onChange: (value: string) => void
   disabled?: boolean; className?: string; placeholder?: string; title?: string
+  /** A further step offered below the choices, such as managing the list itself. */
+  more?: { label: string; onSelect: () => void }
 }): React.ReactElement {
   const [open, setOpen] = React.useState(false), dialog = React.useRef<HTMLDialogElement>(null)
   React.useEffect(() => {
@@ -43,5 +45,6 @@ export function Picker({ label, value, choices, onChange, disabled, className = 
             ...group.items.map(choice => h('button', { key: choice.value, type: 'button', role: 'option', className: 'rc-picker-option', 'aria-selected': choice.value === value, disabled: choice.disabled,
               onClick: () => { setOpen(false); if (choice.value !== value) onChange(choice.value) } },
               h('span', { className: 'rc-picker-label' }, choice.label, choice.hint ? h('small', null, choice.hint) : null),
-              choice.value === value ? h(Icon, { name: 'check' }) : null)))))) : null))
+              choice.value === value ? h(Icon, { name: 'check' }) : null))))),
+        more ? h('button', { type: 'button', className: 'rc-picker-option rc-picker-more', onClick: () => { setOpen(false); more.onSelect() } }, h('span', { className: 'rc-picker-label' }, more.label), h(Icon, { name: 'chevron' })) : null) : null))
 }

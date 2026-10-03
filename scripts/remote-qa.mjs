@@ -13,7 +13,7 @@ const manage = (action, fields = {}) => local.evaluate(async ({ action, fields }
 }, { action, fields })
 const check = (name, details = {}) => { results.push({ name, passed: true, ...details }); console.log('PASS', name) }
 try {
-  await manage('stop'); await local.waitForTimeout(200); await manage('preferences', { mode: process.env.DSH_QA_MODE || 'lan', proxy: process.env.DSH_QA_PROXY || '' }); await manage('start')
+  await manage('stop'); await local.waitForTimeout(200); await manage('preferences', { mode: process.env.DSH_QA_MODE || 'lan', proxy: process.env.DSH_QA_PROXY || '', route: process.env.DSH_QA_ROUTE || 'cloudflare' }); await manage('start')
   await expect.poll(async () => { const state = await manage('status'); if (state.phase === 'error') throw new Error(state.error); return state.phase }, { timeout: 140000, intervals: [1000] }).toBe('ready')
   const initial = await manage('status')
   const changed = await manage('preferences', { mode: initial.activeMode === 'lan' ? 'public' : 'lan' })
@@ -33,7 +33,7 @@ try {
   const send = async text => { await page.getByRole('textbox', { name: '消息', exact: true }).fill(text); await page.getByRole('button', { name: '发送消息', exact: true }).click() }
   // New session keeps tool tests independent of earlier approval history.
   await page.getByRole('button', { name: '打开会话列表', exact: true }).click()
-  await page.getByRole('button', { name: '新会话', exact: true }).click()
+  await page.locator('button.rc-new').click()
   await send('独立远程界面聊天验证')
   await page.getByText('远程链路验证通过：这条回复由隔离 DSH 的本地测试模型逐段生成。', { exact: true }).waitFor()
   check('create, submit and live response through real DSH session services')
@@ -49,7 +49,7 @@ try {
   await send('这条消息附带文件')
   await expect(page.getByRole('button', { name: '停止生成', exact: true })).toHaveCount(0, { timeout: 15000 })
   check('binary attachment upload and prompt admission')
-  await page.getByRole('button', { name: '打开会话列表', exact: true }).click(); await page.getByRole('button', { name: '新会话', exact: true }).click()
+  await page.getByRole('button', { name: '打开会话列表', exact: true }).click(); await page.locator('button.rc-new').click()
   await send('验证用户问题')
   await page.getByRole('checkbox', { name: /选项甲/ }).check(); await page.getByRole('checkbox', { name: /选项乙/ }).check()
   await page.getByRole('button', { name: '提交回答', exact: true }).click()

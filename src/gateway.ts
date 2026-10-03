@@ -5,7 +5,8 @@ import { StringDecoder } from 'node:string_decoder'
 import type { Duplex } from 'node:stream'
 import { WebSocket, WebSocketServer } from 'ws'
 import type { PairingService, Device } from './pairing.js'
-import { body, cookie, json, sameOrigin } from './http.js'
+import { body, cookie, gzipFor, json, sameOrigin } from './http.js'
+import { constants, createGzip } from 'node:zlib'
 import { deniedPage, pairingPage } from './pages.js'
 import { injectBoot } from './boot.js'
 import type { Accent } from './accent.js'
@@ -155,9 +156,18 @@ export class Gateway {
       if (headers.location) {
         try { const target = new URL(headers.location, `http://127.0.0.1:${this.options.upstreamPort}`); if (target.host === `127.0.0.1:${this.options.upstreamPort}`) headers.location = target.pathname + target.search } catch { delete headers.location }
       }
+      res.once('close', () => incoming.destroy())
+      if (!headers['content-encoding'] && req.method !== 'HEAD' && gzipFor(req, String(headers['content-type'] ?? ''))) {
+        delete headers['content-length']
+        res.writeHead(incoming.statusCode ?? 502, { ...headers, 'content-encoding': 'gzip', vary: 'accept-encoding' })
+        // Flushed as it goes, so a response the Host writes in pieces still arrives in pieces.
+        const gzip = createGzip({ flush: constants.Z_SYNC_FLUSH })
+        gzip.on('error', () => res.destroy()); incoming.on('error', () => gzip.destroy())
+        incoming.pipe(gzip).pipe(res)
+        return
+      }
       res.writeHead(incoming.statusCode ?? 502, headers)
       incoming.pipe(res)
-      res.once('close', () => incoming.destroy())
     })
     const untrack = this.track(deviceId, () => upstream.destroy()); upstream.once('close', untrack)
     upstream.on('error', () => { if (!res.headersSent) json(res, 502, { error: 'DSH 宿主连接失败。' }); else res.destroy() })

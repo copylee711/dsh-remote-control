@@ -51,6 +51,8 @@ export const CSS = `
 .dsrc-mode{display:inline-flex;gap:2px;margin-top:12px;padding:3px;border-radius:10px;background:var(--rc-fill);max-width:100%}
 .dsrc-mode button{border:0;background:transparent;color:var(--rc-muted);border-radius:7px;height:28px;padding:0 14px;font-size:13px;white-space:nowrap}
 .dsrc-mode button[aria-pressed=true]{background:var(--rc-paper);color:var(--rc-ink);font-weight:600;box-shadow:0 1px 2px #0000001f}
+.dsrc-routes{margin:0 4px;vertical-align:middle}
+.dsrc-routes button{height:24px;padding:0 10px;font-size:12px}
 .dsrc-toggle{display:flex;align-items:center;gap:8px;margin-top:12px;cursor:pointer}
 .dsrc-toggle input{width:15px;height:15px;accent-color:var(--rc-accent);margin:0}
 .dsrc-proxy{margin-top:12px;border-top:1px solid var(--rc-line);padding-top:10px}
