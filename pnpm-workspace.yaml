@@ -1,0 +1,7 @@
+onlyBuiltDependencies:
+  - '@deepseek-ai/dsh-subprocess-local'
+  - koffi
+  - node-pty
+ignoredBuiltDependencies:
+  - '@google/genai'
+  - protobufjs

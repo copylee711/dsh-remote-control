@@ -1,0 +1,7 @@
+node_modules/
+.qa/
+lib/types/**/*.js
+lib/types/**/*.js.map
+*.tgz
+playwright-report/
+test-results/

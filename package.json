@@ -1,0 +1,109 @@
+{
+  "name": "@copylee/dsh-remote-control",
+  "version": "0.1.0",
+  "description": "DSH 扫码远程控制：本机确认配对、官方界面手机适配、untun 免费公网穿透与局域网直连",
+  "type": "module",
+  "license": "MIT",
+  "author": "copylee",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/copylee711/dsh-remote-control.git"
+  },
+  "homepage": "https://github.com/copylee711/dsh-remote-control#readme",
+  "bugs": {
+    "url": "https://github.com/copylee711/dsh-remote-control/issues"
+  },
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/*.js",
+    "lib/types/**/*.d.ts",
+    "cordis.patch.yml",
+    "README.md",
+    "docs/*.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "packageManager": "pnpm@10.28.0",
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "remote-control",
+    "untun",
+    "qrcode"
+  ],
+  "dsh": {
+    "engines": {
+      "dsh": ">=0.2.0-rc.2"
+    },
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-connection",
+        "@deepseek-ai/dsh-api-remotes",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-sidebar"
+      ]
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc && tsdown",
+    "test": "vitest run",
+    "pack:check": "npm pack --dry-run",
+    "prepack": "npm run build",
+    "qa:host": "node scripts/launch-qa.mjs",
+    "qa:browser": "node scripts/browser-qa.mjs"
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-web-frontend": "0.2.0-rc.2",
+    "qrcode": "^1.5.4",
+    "undici": "^7.30.0",
+    "untun": "0.2.2",
+    "ws": "^8.18.3"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": ">=4.0.0 <5",
+    "@deepseek-ai/dsh-host-webserver": ">=0.1.7-rc.2",
+    "@deepseek-ai/schemastery": ">=3.18.0 <4",
+    "react": ">=18.2.0 <19"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "4.0.4",
+    "@deepseek-ai/dsh": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-api-gateway": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-client-connection": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-host-webserver": "0.2.0-rc.2",
+    "@deepseek-ai/schemastery": "3.18.4",
+    "@playwright/test": "^1.56.0",
+    "@types/node": "^22.20.0",
+    "@types/qrcode": "^1.5.5",
+    "@types/react": "~18.3.31",
+    "@types/ws": "^8.18.1",
+    "react": "^18.3.1",
+    "tsdown": "^0.22.2",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.8"
+  }
+}

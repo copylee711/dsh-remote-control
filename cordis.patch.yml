@@ -1,0 +1,4 @@
+- insert:
+    - id: copylee-remote-control
+      name: '@copylee/dsh-remote-control'
+      config: {}
