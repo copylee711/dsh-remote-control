@@ -17,7 +17,12 @@ export function App({ ctx }: { ctx: Host }): React.ReactElement {
   const [theme, setTheme] = React.useState(() => cachedText('dsrc-theme') || 'system')
   // The colour is one setting for the whole plugin, kept by the Host; the cached copy only avoids a flash on load.
   const [accent, setAccent] = React.useState<Accent>(() => { const cached = cachedText('dsrc-accent'); return isAccent(cached) ? cached : 'orange' })
-  React.useEffect(() => { document.documentElement.dataset.rcAccent = accent; cacheText('dsrc-accent', accent) }, [accent])
+  React.useEffect(() => {
+    document.documentElement.dataset.rcAccent = accent; cacheText('dsrc-accent', accent)
+    // Other copylee plugins' pages opened here read their accent from this key (see client/shared-accent.ts).
+    try { localStorage.setItem('copylee.dsh.accent', accent) } catch { /* private mode */ }
+    window.dispatchEvent(new Event('copylee-dsh-accent'))
+  }, [accent])
   React.useEffect(() => { void command({ action: 'status' }).then(status => { if (isAccent(status.accent)) setAccent(status.accent) }, () => {}) }, [])
   const chooseAccent = (next: Accent) => { setAccent(next); void command({ action: 'preferences', accent: next }).catch(() => {}) }
   /** The settings section a drawer shortcut opens directly ('' = the category list). */

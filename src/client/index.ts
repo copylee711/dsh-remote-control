@@ -1,6 +1,8 @@
 import * as React from 'react'
 import { CSS } from './style.js'
-import { ACCENTS, ACCENT_IDS, type Accent } from '../accent.js'
+import type { Accent } from '../accent.js'
+import { ACCENTS, ACCENT_IDS, installAccent, useAccent } from './shared-accent.js'
+import { chooseAccent, syncAccent } from './accent-sync.js'
 const h = React.createElement
 const ROUTE = '/api/dsh-remote-control/manage'
 interface Status {
@@ -103,9 +105,11 @@ export function RemoteControlPanel(): React.ReactElement {
   }
   const change = async (mode: Way) => { setAsking(null); await act('preferences', { mode }); await act('switch') }
   const disabled = working || !!state?.busy
+  const [accent] = useAccent()
+  React.useEffect(() => { syncAccent(state?.accent, next => { void act('preferences', { accent: next }) }) }, [state?.accent])
   const firstURL = state?.links[0]?.url
   const button = (label: string, action: string, fields?: Record<string, unknown>, extra = '') => h('button', { type: 'button', className: `dsrc-button ${extra}`, disabled, onClick: () => { void act(action, fields) } }, label)
-  return h('div', { className: 'dsrc', 'data-dsh-plugin': 'dsh-remote-control', 'data-rc-accent': state?.accent ?? 'orange' },
+  return h('div', { className: 'dsrc', 'data-dsh-plugin': 'dsh-remote-control' },
     h('header', { className: 'dsrc-head' }, h('div', null, h('h2', null, '远程控制'), h('p', { className: 'dsrc-sub' }, '扫码后在本机确认连接，继续会话与审批。')),
       h('span', { className: 'dsrc-badge', 'data-ready': state?.phase === 'ready' }, h('span', { className: 'dsrc-dot' }), phaseLabels[state?.phase ?? 'off'] ?? '读取状态')),
     h('section', { className: 'dsrc-surface' },
@@ -124,8 +128,8 @@ export function RemoteControlPanel(): React.ReactElement {
       h('div', { className: 'dsrc-actions' }, state?.enabled ? button('关闭远程连接', 'stop') : button('开启远程连接', 'start', {}, 'dsrc-primary')),
       h('label', { className: 'dsrc-toggle' }, h('input', { type: 'checkbox', checked: state?.autoStart ?? false, disabled, onChange: (event: React.ChangeEvent<HTMLInputElement>) => { void act('preferences', { autoStart: event.target.checked }) } }), '随 DSH 启动，自动开启所选连接方式'),
       h('div', { className: 'dsrc-note' }, '强调色　', h('span', { className: 'dsrc-swatches', role: 'radiogroup', 'aria-label': '强调色' },
-        ...ACCENT_IDS.map(id => h('button', { key: id, type: 'button', className: 'dsrc-swatch', role: 'radio', 'aria-checked': (state?.accent ?? 'orange') === id, 'aria-label': ACCENTS[id].name, title: ACCENTS[id].name, style: { '--rc-swatch': ACCENTS[id].light.accent } as React.CSSProperties, onClick: () => { void act('preferences', { accent: id }) } }))),
-        '　电脑面板、配对页和手机界面共用'),
+        ...ACCENT_IDS.map(id => h('button', { key: id, type: 'button', className: 'dsrc-swatch', role: 'radio', 'aria-checked': accent === id, 'aria-label': ACCENTS[id].name, title: ACCENTS[id].name, style: { '--rc-swatch': ACCENTS[id].accent } as React.CSSProperties, onClick: () => { chooseAccent(id); void act('preferences', { accent: id }) } }))),
+        '　电脑面板、配对页、手机界面和 copylee 的其他插件共用'),
       shown !== 'lan' ? h('div', { className: 'dsrc-note' }, '线路　',
         h('span', { className: 'dsrc-mode dsrc-routes', role: 'group', 'aria-label': '线路' },
           ...([['cloudflare', 'Cloudflare'], ['ssh', 'localhost.run（备用）']] as const).map(([id, name]) =>
@@ -179,7 +183,7 @@ function PairingPrompt({ waiting, onDone }: { waiting: Waiting; onDone: () => vo
     finally { setWorking(false); onDone() }
   }
   return h('dialog', { className: 'dsrc-dialog dsrc-prompt', ref: dialog, onCancel: (event: React.SyntheticEvent) => event.preventDefault() },
-    request ? h('div', { className: 'dsrc', 'data-rc-accent': waiting.accent ?? 'orange' },
+    request ? h('div', { className: 'dsrc' },
       h('h2', null, '新的配对请求'),
       h('p', { className: 'dsrc-prompt-device' }, request.name),
       h('p', { className: 'dsrc-note' }, '这台设备扫描了远程控制二维码。允许后，它与本机拥有相同的权限，可以管理设置、凭据和插件。不是你本人操作请拒绝。'),
@@ -194,7 +198,11 @@ function SidebarEntry({ wide }: { wide?: boolean }): React.ReactElement {
   const [waiting, setWaiting] = React.useState<Waiting>({ enabled: false, requests: [] })
   React.useEffect(() => { if (open) dialog.current?.showModal(); else dialog.current?.close() }, [open])
   const check = React.useCallback(async () => {
-    try { setWaiting(await command({ action: 'requests' }) as unknown as Waiting) } catch { /* the Host is restarting: ask again on the next tick */ }
+    try {
+      const next = await command({ action: 'requests' }) as unknown as Waiting
+      setWaiting(next)
+      syncAccent(next.accent, accent => { void command({ action: 'preferences', accent }).catch(() => {}) })
+    } catch { /* the Host is restarting: ask again on the next tick */ }
   }, [])
   React.useEffect(() => { void check(); const timer = setInterval(() => { void check() }, 2500); return () => clearInterval(timer) }, [check])
   const pending = waiting.requests.length > 0
@@ -206,6 +214,7 @@ function SidebarEntry({ wide }: { wide?: boolean }): React.ReactElement {
 }
 export const inject = ['slots', 'connection']
 export function apply(ctx: ClientContext): void {
+  ctx.effect(() => installAccent(), 'remote-control accent colour')
   ctx.effect(() => { const style = document.createElement('style'); style.dataset.dshRemoteControl = 'true'; style.textContent = CSS; document.head.append(style); return () => style.remove() }, 'remote-control styles')
   ctx.slots.inject('settings.section', () => ctx.slots.register({ name: 'settings.section', id: 'copylee-remote-control', order: 65, label: () => '远程控制' }, () => h(RemoteControlPanel)))
   ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({ name: 'sidebar.footer.action', id: 'copylee-remote-control', order: 65 }, (props: { wide?: boolean }) => h(SidebarEntry, { wide: props?.wide })))

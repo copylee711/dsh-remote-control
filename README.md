@@ -1,82 +1,122 @@
-# DSH Remote Control
+# dsh-remote-control
 
-通过扫码和本机确认，把手机浏览器连接到自己的 DeepSeek Harness。0.2.0 提供独立的暖色远程界面，适配手机、平板与电脑，并保留免费临时公网隧道、局域网直连和设备授权管理。本机桌面应用与 dsh web 的原有主界面保持原样。
+[![npm](https://img.shields.io/npm/v/@copylee/dsh-remote-control)](https://www.npmjs.com/package/@copylee/dsh-remote-control)
 
-包名：`@copylee/dsh-remote-control`。需要 DSH **0.2.0-rc.2 或更新的兼容版本**，Node.js **22.19+ 或 24+**。不支持旧版 0.1.x 宿主。
+DeepSeek Harness（DSH）的远程控制插件：手机扫码、在电脑上确认后，用手机浏览器继续自己电脑上的会话、处理审批、查看文件和管理设置。电脑上的桌面应用和 `dsh web` 界面保持原样。
 
-## 安装与使用
+## 功能
 
-在 DSH 插件管理页添加 `@copylee/dsh-remote-control`，应用变更。`dsh web` 与桌面应用使用各自的 profile，需分别安装。点击左侧栏底部的“远程控制”，也可以从设置中的“远程控制”打开面板。
-
-1. 首次默认关闭。选择“同一 Wi‑Fi”或“任意网络”，点击开启。
-2. “任意网络”首次需要下载 cloudflared，依次显示下载、启动、验证状态。只有公网回环检查成功才展示可用链接。
-3. 手机扫码或打开复制的配对链接，进入等待页；在电脑面板中批准该设备。
-4. 批准后进入独立远程界面，可使用会话、审批、文件、设置和插件管理。
-5. “关闭连接”断开所有访问并保留设备授权；“撤销”立即断开对应设备并使其凭据失效。
-
-二维码有效期 5 分钟。刷新会使旧二维码和旧待批准请求失效。设备连续 30 天不使用后失效；浏览器 cookie 和服务端授权均有过期限制。临时公网域名变化后需要重新扫码、本机批准，因为浏览器不会把旧域名的授权交给新域名。最多保存 32 台设备，同时最多等待 16 个配对请求。
-
-已批准设备与本机同权，包括凭据、插件、设备授权管理和关闭远程连接。**新设备的首次批准只能从本机完成**。请只批准自己信任的设备。公网 HTTPS 在 Cloudflare 边缘终止；本插件不提供端到端加密。局域网模式使用 HTTP，应在可信网络中使用。
-
-## 连接模式
-
-| 模式 | 行为 |
+| 功能 | 说明 |
 | --- | --- |
-| 临时公网 | untun 0.2.2 / Cloudflare Quick Tunnel，无需账号和域名，地址临时分配 |
-| 局域网 | 独立网关监听局域网，手机与电脑同一网络，不改变 DSH 原始监听配置 |
-| 任意网络 · 备用线路 | localhost.run，经系统自带的 ssh，免注册免下载；实测速度很慢，需在面板里手动选择 |
-| 固定入口 | 暂不可用；尚未验证允许第三方使用的免费固定入口服务 |
+| 两种连接方式 | “同一 Wi‑Fi”：手机与电脑在同一网络内直连。“任意网络”：经 Cloudflare Quick Tunnel 获得一个临时公网地址，不需要账号和域名 |
+| 备用线路 | “任意网络”可改走 localhost.run（使用系统自带的 `ssh`，不下载任何组件）。实测速度很慢，只在 Cloudflare 开不起来时手动选用 |
+| 扫码配对、本机确认 | 新设备扫码后进入等待页，电脑上弹出配对请求，允许后才能访问。新设备的首次批准只能在电脑上完成 |
+| 设备管理 | 查看已授权设备（显示机型和连接方式）、重命名、撤销单台或全部设备 |
+| 手机界面 | 独立的移动端界面：会话列表抽屉、底部输入区、分类设置页；提供浅色、深色、跟随系统三种主题 |
+| 会话 | 新建、搜索、重命名、归档与恢复；选择工作区、模型、思考强度、Agent 和权限模式；Markdown、代码、表格、图片、附件、停止生成、工具审批、提问与方案确认 |
+| 文件 | 浏览工作区，预览文本和图片，下载文件；在输入区上传附件 |
+| 管理 | 宿主设置、凭据、插件安装与启停、定时任务、技能目录、工作区和远程设备 |
+| 断线提示 | 手机与电脑失去联系时，界面顶部主动提示，恢复后自动重新读取状态；发送、审批、安装等写操作不会自动重放 |
+| 强调色 | 陶土橙、蓝色、黑色三选一，电脑面板、配对页、手机界面以及 copylee 的其他插件共用同一个选择 |
 
-“随 DSH 启动”按 profile 保存，默认关闭。已连接时点击另一种连接方式会先询问，确认后才更换；未确认时保持当前连接、地址和二维码。面板分别显示“当前连接”与“待切换”；只有明确点击“切换到局域网／临时公网”才断开旧入口、作废旧二维码及待批准请求，并建立新入口。切换失败保持关闭并报告原因，可再次开启；已批准设备记录保留。远程设备发起切换时先收到提示，再断开访问。网关端口默认为自动分配，也可以在宿主插件配置中设置 `gatewayPort`。
+## 安装
 
-公网启动失败时可重试或改用局域网。面板可配置电脑端 HTTP(S) 代理地址，例如 `http://127.0.0.1:7890`；不接受包含用户名或密码的代理 URL。该设置传给下载与 Node HTTP 检查进程，**不能保证 cloudflared 到 Cloudflare 边缘的连接也通过 HTTP 代理**。大陆手机直连仍取决于当地网络，不能把分配到域名视作手机可用。
+DSH 桌面版：**插件 → 添加插件**，输入 `@copylee/dsh-remote-control`，安装后启用。
 
-局域网连接失败时，先检查手机与电脑的网络、路由器客户端隔离/VPN 和面板显示的 IP 与端口。Windows 防火墙可能阻止网关端口：在“Windows Defender 防火墙（高级安全）→ 入站规则”中手动允许面板端口的 TCP 入站，建议限制为专用网络及本地子网。插件不会更改系统防火墙；固定端口更适合维护手动规则。
+命令行（`dsh web` 等其他 profile）：
 
-## 数据与传输
-
-授权与偏好保存到 `$DSH_HOME/dsh-remote-control/<profile>/`；未设置 DSH_HOME 时使用 `~/.dsh`。设备文件只保存随机秘密的 SHA-256 校验值、设备名称和时间信息，采用临时文件与原子替换。面板及日志不显示设备秘密。
-
-公网隧道指向独立认证网关。批准前只可打开配对页，无法读取宿主资源或数据。网关在内部换取宿主凭据，替换上游认证，不把原始宿主凭据交给手机。停止或撤销会取消在途 HTTP、WebSocket 和 SSE 连接。
-
-DSH 核心通信使用 `/api/remote.mux` WebSocket，直接通过认证网关转发。官方插件热更新使用 `/plugins/events` SSE；因为 [Quick Tunnels 不支持 SSE](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/trycloudflare/)，远程引导在客户端 SDK 启动前把 EventSource 转为 WebSocket，支持事件顺序、Last-Event-ID、重连和取消。文件上传保留二进制流，不转换为 JSON。
-
-独立界面参照 Claude / ChatGPT 手机客户端的形态，提供浅色、深色和跟随系统主题，以及可切换的强调色（陶土橙、蓝色、黑色）；强调色在电脑面板、配对页和手机界面之间共用。窄屏为顶部导航、会话抽屉、底部输入区和单栏设置；宽屏使用会话列表与内容双栏。输入处理动态视口和安全区，手机 Enter 换行，发送按钮提交，中文输入法组合期间不提交；查看历史时不会强制跳回最新消息。
-
-- 会话：新建、搜索、重命名、归档与恢复、分支，选择工作区、模型、思考强度、Agent 和权限模式；Markdown、代码、图片、附件、停止生成、审批、单选／多选问题、方案确认、工具轨迹及子任务查看。
-- 管理：根据宿主配置描述生成表单，保留配置版本冲突检查；凭据写入、插件安装与日志、停用／启用／卸载、每日自动化创建与任务管理、技能清单与目录配置、会话费用投影、工作区与远程设备管理。没有启用的能力会明确提示。
-- 文件：浏览工作区、文本与图片预览、PDF 浏览器预览、二进制下载；聊天输入区上传附件。“在电脑上打开”只调用宿主原生应用能力，未启用时禁用。
-- 恢复：文字草稿按会话保存，后台／断网后由宿主 SDK 恢复订阅并重新读取状态，不自动重放发送、审批或安装。安装任务 ID 可在刷新后查询原任务。凭据不进入浏览器持久化缓存。
-
-第三方自定义设置页使用专门的兼容容器：复用 SDK 的服务、扩展注册、作用域与渲染上下文，修复窄屏布局。常规页面不嵌入整套官方界面。当前兼容适配基于 DSH 0.2.0-rc.2 的 Slots renderer，依赖一个集中维护的内部渲染接口；宿主升级改变它时，兼容页面会报告不可用。computer-use、proxy 已在隔离宿主检查，不能推定所有第三方页面均兼容。
-
-共享视觉规格位于工作区 `D:\AI\dsh_plugins\DSH-PLUGIN-UI-SPEC.md`，仓库交付副本见 [UI 规格](docs/ui-spec.md)。实际功能与验收边界见 [功能对应清单](docs/features.md) 和 [验证记录](docs/verification.md)。
-
-## 开发与验证
-
-```sh
-pnpm install --frozen-lockfile --ignore-scripts
-pnpm typecheck
-pnpm test
-pnpm build
-npm pack --dry-run
+```bash
+dsh plugin --profile web add @copylee/dsh-remote-control@latest
 ```
 
-`pnpm qa:host` 启动独立的真实 DSH Web profile，配置与会话都在忽略的 `.qa/` 目录中，不操作日常 DSH。`pnpm qa:browser` 使用本机 Chrome 检查配对、独立界面、会话管理、实时传输、设置与撤销。QA 专用模型只在隔离 profile 中提供确定性回复，不发送外部模型请求。手机尺寸 Chromium 模拟不能替代 Android Chrome 和 iPhone Safari 实机验收。
+桌面应用和 `dsh web` 使用各自的 profile，需要分别安装。
 
-## npm 发布
+要求：DSH 0.2.0-rc.2 或更高，Node.js 22.19+ 或 24+。“任意网络”需要电脑能访问 Cloudflare；手机不需要代理。
 
-GitHub CI 检查 Windows 与 Linux。首次发布使用本地已登录 npm 账号。后续推送与 package.json 版本一致的 `v*` 标签，触发 `.github/workflows/publish.yml`；手动触发也可用，已发布版本自动跳过。
+## 使用
 
-首次发布后在 npm 包设置中添加 **GitHub Actions Trusted Publisher**：
+点击左侧栏底部的手机图标，或打开 **设置 → 远程控制**。
 
-| 字段 | 值 |
-| --- | --- |
-| Organization or user | `copylee711` |
-| Repository | `dsh-remote-control` |
-| Workflow filename | `publish.yml` |
-| Environment | 留空（工作流未配置 environment） |
+1. 选择“同一 Wi‑Fi”或“任意网络”，点击“开启远程连接”。“任意网络”首次开启会下载 Cloudflare 的连接组件，并在确认公网地址可用后才显示二维码。
+2. 用手机扫描二维码，或打开复制的链接。
+3. 电脑上弹出配对请求，确认设备名称后点“允许连接”。
+4. 手机进入远程界面。
 
-工作流使用 GitHub 托管 runner、`id-token: write`、最新版 npm 和 `npm publish --provenance`，不需要 NPM_TOKEN。参见 [npm 官方文档](https://docs.npmjs.com/trusted-publishers/)。本次已按包拥有者提供的 Trusted Publisher 配置执行后续发布；发布结果以 GitHub Actions 和 npm 实际包内容为准。
+二维码只用于配对新设备，有效期 5 分钟，点击二维码可以刷新；已配对的手机不受二维码过期影响。
 
-实现参考：[官方 GUI 复用插件](https://github.com/zhu1090093659/dsh-web/tree/main/packages/dsh-remote-web-ui)、[DSH Remote](https://github.com/mrRisega/dsh-remote/tree/main/packages/dsh-remote-web)、[untun](https://github.com/unjs/untun)。本项目独立实现，没有接入作者的公共中继服务。
+配对后是否需要重新扫码：
+
+- “同一 Wi‑Fi”：授权保存在手机浏览器里，电脑重启连接后会尽量沿用上次的端口，手机打开原地址即可继续使用；连续 30 天不使用后授权过期。
+- “任意网络”：每次开启都会换一个新地址，浏览器不会把旧地址的授权带到新地址，所以需要重新扫码并在电脑上确认。关闭连接时，这类设备记录会自动清除。
+
+“关闭远程连接”会断开所有手机并保留“同一 Wi‑Fi”设备的授权；“撤销”立即断开对应设备并使其授权失效。已连接时改用另一种连接方式会先询问，确认后才断开当前连接。
+
+### 连接不上时
+
+- “任意网络”开不起来：先确认电脑能访问 Cloudflare。面板的“电脑访问外网的代理”默认不使用代理；直连不通时可改为“自动检测系统代理”或手动填写 HTTP(S) 代理地址（不接受带用户名密码的地址）。走代理反而连不上时改回“不使用”。仍不行可把线路换成 localhost.run。
+- “同一 Wi‑Fi”打不开：确认手机与电脑在同一网络、路由器没有开启客户端隔离、手机没有开 VPN。Windows 防火墙可能拦截网关端口，需要在“Windows Defender 防火墙（高级安全）→ 入站规则”里手动允许面板显示的端口（TCP，建议限制为专用网络）。插件不会修改系统防火墙。
+
+## 设置
+
+| 选项 | 默认 | 说明 |
+| --- | --- | --- |
+| 连接方式 | 任意网络 | 同一 Wi‑Fi / 任意网络 |
+| 随 DSH 启动 | 关 | 启动时自动开启所选连接方式，按 profile 保存 |
+| 线路 | Cloudflare | Cloudflare / localhost.run（备用），只对“任意网络”有效 |
+| 电脑访问外网的代理 | 不使用 | 不使用 / 自动检测系统代理 / 手动填写，只对“任意网络”有效 |
+| 强调色 | 陶土橙 | 陶土橙 / 蓝色 / 黑色 |
+| `gatewayPort`（插件配置项） | 自动 | 固定网关端口，便于维护防火墙规则 |
+
+## 安全说明
+
+- **已授权的设备与电脑本机权限相同**，可以管理设置、凭据和插件。只批准自己信任的设备。
+- “任意网络”的 HTTPS 在 Cloudflare 边缘终止，本插件不提供端到端加密。“同一 Wi‑Fi”使用 HTTP，应只在可信网络中使用。
+- 手机访问的是插件自己的认证网关，而不是 DSH 的端口。未配对的设备只能打开配对页，读不到任何宿主数据；网关在内部换用宿主凭据，原始凭据不会发给手机。
+- 最多保存 32 台设备，超出时淘汰最久未使用且不在线的一台；同时最多等待 16 个配对请求。
+- 关闭连接或撤销设备会立即中断对应的 HTTP、WebSocket 和 SSE 连接。
+
+## 数据与隐私
+
+- 授权与偏好保存在 `$DSH_HOME/dsh-remote-control/<profile>/`（未设置 `DSH_HOME` 时为 `~/.dsh`）。设备文件只保存随机密钥的 SHA-256 校验值、设备名称和时间，不保存密钥本身。
+- “任意网络”的流量经过 Cloudflare（或 localhost.run）的服务器转发；“同一 Wi‑Fi”的流量不出局域网。
+- 插件不收集、不上传使用数据。
+
+## 工作原理
+
+```
+手机浏览器
+   │  HTTPS（任意网络：Cloudflare Quick Tunnel / localhost.run）或 HTTP（同一 Wi‑Fi）
+   ▼
+认证网关（本插件，独立端口）  配对、设备 cookie、来源检查、限速
+   │  回环地址，换用宿主凭据
+   ▼
+DSH Host 的 Web 服务  /api/remote.mux（WebSocket）、/plugins/*、文件接口
+```
+
+- 手机界面是随插件发布的独立前端：它启动宿主的客户端服务来读写会话和设置，界面本身由插件渲染。
+- Cloudflare Quick Tunnel 不支持 SSE，远程引导脚本把宿主的 `/plugins/events` 事件流改由 WebSocket 传输，保留事件顺序、`Last-Event-ID` 和重连。
+- 第三方插件的设置页通过兼容容器显示，依赖 DSH 0.2.0-rc.2 的内部渲染接口；宿主升级改变该接口时，对应页面会提示不可用，其余功能不受影响。
+
+更多细节见 [功能对应清单](docs/features.md)、[验证记录](docs/verification.md)、[调研记录](docs/research.md) 和 [UI 规格](docs/ui-spec.md)。
+
+## 开发
+
+```bash
+pnpm install
+pnpm typecheck
+pnpm test          # vitest：网关、配对、宿主集成
+pnpm build
+node scripts/check-package.mjs   # 检查打包内容
+```
+
+`pnpm qa:host` 在仓库的 `.qa/` 目录里启动一个隔离的 DSH Web profile，不触碰日常使用的 DSH 配置；`pnpm qa:browser` 用本机 Chrome 跑完整回归（配对、会话、文件、设置、撤销）。回归使用的测试模型只返回固定内容，不发出外部请求。
+
+本地联调：DSH 桌面版“添加插件”里填本仓库目录路径（以 link 方式安装），`pnpm build` 后重启 DSH 生效。
+
+## 致谢
+
+实现时参考了 [dsh-remote-web-ui](https://github.com/zhu1090093659/dsh-web/tree/main/packages/dsh-remote-web-ui)、[DSH Remote](https://github.com/mrRisega/dsh-remote/tree/main/packages/dsh-remote-web) 和 [untun](https://github.com/unjs/untun)。本项目为独立实现，不使用这些项目作者的中继服务。
+
+## 许可证
+
+MIT

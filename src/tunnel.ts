@@ -2,7 +2,7 @@ import { fork, spawn, execFile } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import type { Gateway } from './gateway.js'
-import { fetch as tunnelFetch, ProxyAgent } from 'undici'
+import type { ProxyAgent } from 'undici'
 
 /** How long a new public address may take to answer before the start counts as failed. */
 const VERIFY_MS = 60_000
@@ -44,6 +44,7 @@ export class TunnelManager {
   private checking = false
   private lastFailure = ''
   private proxy?: ProxyAgent
+  private undici?: typeof import('undici')
   private proxyAddress?: string
   /** Services still to try if the current one does not come up. */
   private remaining: Route[] = []
@@ -55,7 +56,9 @@ export class TunnelManager {
   async start(proxy?: string, routes: Route[] = ['cloudflare'], knownHosts = ''): Promise<void> {
     await this.stop()
     this.proxyAddress = proxy
-    this.proxy = proxy ? new ProxyAgent(proxy) : undefined
+    // undici is only needed to go through a proxy, so it is loaded here rather than with the plugin.
+    this.undici = proxy ? await import('undici') : undefined
+    this.proxy = proxy && this.undici ? new this.undici.ProxyAgent(proxy) : undefined
     this.knownHosts = knownHosts
     this.remaining = [...routes]
     this.error = undefined; this.warning = undefined; this.note = undefined; this.everReady = false
@@ -131,7 +134,7 @@ export class TunnelManager {
       const address = this.gateway.healthURL(this.url)
       const ask = async (viaProxy: boolean) => {
         const init = { signal: AbortSignal.timeout(10000), redirect: 'error' as const }
-        const response = viaProxy && this.proxy ? await tunnelFetch(address, { ...init, dispatcher: this.proxy }) : await fetch(address, init)
+        const response = viaProxy && this.proxy && this.undici ? await this.undici.fetch(address, { ...init, dispatcher: this.proxy }) : await fetch(address, init)
         const ok = response.ok && this.gateway.verifyHealth(await response.json())
         if (!ok) this.lastFailure = response.ok ? '网关验证信息不匹配' : `HTTP ${response.status}`
         return ok

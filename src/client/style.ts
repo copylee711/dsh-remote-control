@@ -3,7 +3,6 @@
  * also shown inside the remote app. Compact desktop sizes per docs/ui-spec.md;
  * touch sizes below 560px.
  */
-import { accentCSS } from '../accent.js'
 export const CSS = `
 .dsrc{--rc-ink:var(--dsw-alias-label-primary,#292724);--rc-muted:var(--dsw-alias-label-secondary,#77736c);--rc-line:var(--dsw-alias-border-l2,#e4e0d8);--rc-paper:var(--dsw-alias-background-primary,#fff);--rc-fill:color-mix(in srgb,var(--rc-ink) 6%,transparent);--rc-accent:#D97757;--rc-accent-ink:#fff;--rc-danger:#B34337;color:var(--rc-ink);font-family:inherit;font-size:13px;line-height:1.6;max-width:760px;margin:0 auto}
 .dsrc *{box-sizing:border-box}
@@ -123,5 +122,5 @@ export const CSS = `
 .dsrc{--rc-ink:var(--dsw-alias-label-primary,#f0eee8);--rc-muted:var(--dsw-alias-label-secondary,#b5afa6);--rc-line:var(--dsw-alias-border-l2,#454039);--rc-paper:var(--dsw-alias-background-primary,#2d2b28);--rc-danger:#EF9181}
 .dsrc-dialog{background:var(--dsw-alias-background-primary,#242321)}
 }
-${accentCSS('.dsrc', 'media')}
+.dsrc{--rc-accent:var(--cl-accent,#D97757);--rc-accent-hover:color-mix(in srgb,var(--rc-accent) 88%,#000);--rc-accent-ink:var(--cl-accent-ink,#fff)}
 `

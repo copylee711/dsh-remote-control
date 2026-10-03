@@ -10,7 +10,6 @@ import { readFile, stat } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import QRCode from 'qrcode'
 import { PairingService } from './pairing.js'
 import { Gateway, MANAGE_PATH, REMOTE_MARK } from './gateway.js'
 import { TunnelManager, ROUTES, ROUTE_IDS, isTemporaryHost, type Route } from './tunnel.js'
@@ -147,6 +146,12 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
       if (fresh || !detected || Date.now() - detected.at > 15_000) detected = { at: Date.now(), value: await detectSystemProxy().catch(() => null) }
       return detected.value
     }
+    // The QR library is loaded with the first code drawn, and a code is only redrawn when its link changes.
+    let drawn: { url: string; image: string } | undefined
+    const qrImage = async (url: string) => {
+      if (drawn?.url !== url) drawn = { url, image: await (await import('qrcode')).default.toDataURL(url, { width: 260, margin: 2, errorCorrectionLevel: 'M' }) }
+      return drawn.image
+    }
     const status = async (local: boolean) => {
       const links = baseURLs().map(base => ({ base, url: qr ? `${base}/pair#pair=${qr.token}` : undefined }))
       const active = new Set(gateway?.onlineIds() ?? [])
@@ -156,7 +161,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
         route: preferences.route, activeRoute: enabled && activeMode === 'public' && tunnel?.route ? ROUTES[tunnel.route].name : undefined, routeNote: enabled && activeMode === 'public' ? tunnel?.note : undefined,
         phase: enabled ? activeMode === 'public' ? tunnel?.phase ?? 'starting' : 'ready' : error ? 'error' : 'off',
         error: error ?? tunnel?.error, warning: enabled && activeMode === 'public' ? tunnel?.warning : undefined, gatewayPort: gateway?.port ?? 0, local,
-        expiresAt: qr?.expiresAt, links, qr: links[0]?.url ? await QRCode.toDataURL(links[0].url, { width: 260, margin: 2, errorCorrectionLevel: 'M' }) : undefined,
+        expiresAt: qr?.expiresAt, links, qr: links[0]?.url ? await qrImage(links[0].url) : undefined,
         requests: local ? pairing.requests() : [], devices: pairing.list().map(({ host, ...device }) => ({ ...device, via: host === undefined ? undefined : isTemporaryHost(host) ? 'public' : 'lan', online: active.has(device.id) })),
         fixedAvailable: false, fixedReason: '尚未找到已验证、允许第三方使用的免费固定入口服务。',
         lanHint: '手机需与电脑处于同一局域网。若连接被防火墙阻断，请手动允许网关端口；插件不会修改防火墙。',
