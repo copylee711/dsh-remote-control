@@ -4,8 +4,11 @@
  * message box. Colours follow docs/ui-spec.md.
  */
 export const REMOTE_CSS = `
-:root{--rc-bg:#faf9f5;--rc-paper:#fffefa;--rc-ink:#292724;--rc-muted:#77736c;--rc-line:#e4e0d8;--rc-accent:#d97757;--rc-accent-ink:#fff;--rc-soft:#f0ede6;--rc-danger:#b34337;--rc-shadow:0 1px 2px #2927240a,0 6px 24px #29272412;color-scheme:light}
+:root{--rc-accent-hover:#c86748;--rc-bg:#faf9f5;--rc-paper:#fffefa;--rc-ink:#292724;--rc-muted:#77736c;--rc-line:#e4e0d8;--rc-accent:#d97757;--rc-accent-ink:#fff;--rc-soft:#f0ede6;--rc-danger:#b34337;--rc-shadow:0 1px 2px #2927240a,0 6px 24px #29272412;color-scheme:light}
 :root[data-rc-theme=dark]{--rc-bg:#242321;--rc-paper:#2d2b28;--rc-ink:#f0eee8;--rc-muted:#b5afa6;--rc-line:#454039;--rc-soft:#37332e;--rc-danger:#ef9181;--rc-shadow:0 1px 2px #0003,0 6px 24px #0000004d;color-scheme:dark}
+:root[data-rc-accent=blue]{--rc-accent:#3d63e6;--rc-accent-hover:#3354c8}
+:root[data-rc-accent=black]{--rc-accent:#1f1e1d;--rc-accent-hover:#3a3835}
+:root[data-rc-accent=black][data-rc-theme=dark]{--rc-accent:#f0eee8;--rc-accent-hover:#d8d4cc;--rc-accent-ink:#242321}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body,#root{margin:0;width:100%;height:100%;overflow:hidden}
 body{background:var(--rc-bg);color:var(--rc-ink);font:16px/1.65 -apple-system,BlinkMacSystemFont,'Segoe UI','Microsoft YaHei',sans-serif}
@@ -30,7 +33,7 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 input,textarea,select{min-width:0;width:100%;border:1px solid var(--rc-line);border-radius:14px;background:var(--rc-paper);padding:11px 14px;font-size:16px}
 input[type=checkbox],input[type=radio]{width:22px;height:22px;padding:0;accent-color:var(--rc-accent);flex-shrink:0}
 .rc-primary{background:var(--rc-accent);color:var(--rc-accent-ink);font-weight:600}
-.rc-primary:hover,.rc-send:hover{background:#c86748}
+.rc-primary:hover,.rc-send:hover{background:var(--rc-accent-hover)}
 .rc-danger{color:var(--rc-danger)}
 .rc-pill{background:var(--rc-paper);box-shadow:var(--rc-shadow)}
 .rc-text{background:transparent;min-height:0;padding:4px 10px}
@@ -63,11 +66,19 @@ input[type=checkbox],input[type=radio]{width:22px;height:22px;padding:0;accent-c
 .rc-nav[aria-current=true],.rc-session[aria-current=true]{background:var(--rc-line)}
 .rc-workspace{border:0;background:transparent;color:var(--rc-muted);font-size:14px;padding:6px 12px}
 .rc-divider{margin:8px 10px}
-.rc-session-list{flex:1;overflow:auto;padding-bottom:76px}
+.rc-session-list{flex:1;overflow:auto;padding-bottom:132px}
 .rc-session{display:flex;align-items:center;gap:8px;width:100%;text-align:left;background:transparent;border-radius:14px;padding:11px 12px;font-size:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .rc-running{width:8px;height:8px;border-radius:50%;background:var(--rc-accent);flex-shrink:0;animation:rc-pulse 1.4s ease-in-out infinite}
 .rc-empty{padding:12px}
-.rc-sidebar-footer{position:absolute;left:14px;right:14px;bottom:max(14px,env(safe-area-inset-bottom));display:flex;align-items:center;gap:8px}
+.rc-sidebar-footer{position:absolute;left:14px;right:14px;bottom:max(14px,env(safe-area-inset-bottom));display:grid;gap:10px}
+.rc-look{display:flex;align-items:center;gap:10px}
+.rc-swatches{display:flex;gap:6px;padding:4px;border-radius:999px;background:var(--rc-paper);box-shadow:var(--rc-shadow)}
+.rc-swatch{width:36px;height:36px;min-height:36px;padding:0;border:3px solid var(--rc-paper);background:#d97757}
+.rc-swatch:hover{background:#d97757}
+.rc-swatch[data-accent=blue],.rc-swatch[data-accent=blue]:hover{background:#3d63e6}
+.rc-swatch[data-accent=black],.rc-swatch[data-accent=black]:hover{background:#1f1e1d}
+:root[data-rc-theme=dark] .rc-swatch[data-accent=black]{background:#f0eee8}
+.rc-swatch[aria-checked=true]{box-shadow:0 0 0 2px var(--rc-ink)}
 .rc-new{display:inline-flex;align-items:center;gap:8px;padding:10px 20px;box-shadow:var(--rc-shadow)}
 .rc-new svg{width:20px;height:20px}
 .rc-theme{flex:1;min-width:0;border:0;border-radius:999px;background:var(--rc-paper);box-shadow:var(--rc-shadow);font-size:14px;padding:11px 12px;text-align:center}
