@@ -3,6 +3,7 @@ import { CSS } from './style.js'
 import type { Accent } from '../accent.js'
 import { ACCENTS, ACCENT_IDS, installAccent, useAccent } from './shared-accent.js'
 import { chooseAccent, syncAccent } from './accent-sync.js'
+import { registerNavIcon } from './nav-icon.js'
 const h = React.createElement
 const ROUTE = '/api/dsh-remote-control/manage'
 interface Status {
@@ -57,6 +58,10 @@ export function RemoteControlPanel(): React.ReactElement {
   const [working, setWorking] = React.useState(false)
   const [proxy, setProxy] = React.useState('')
   const [notice, setNotice] = React.useState('')
+  // A short message that floats over the panel and goes by itself: the answer to "did that work?".
+  const [toast, setToast] = React.useState(''), toastTimer = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const say = (text: string) => { setToast(text); clearTimeout(toastTimer.current); toastTimer.current = setTimeout(() => setToast(''), 2200) }
+  React.useEffect(() => () => clearTimeout(toastTimer.current), [])
   const mounted = React.useRef(true), pending = React.useRef(false)
   const refresh = React.useCallback(async () => {
     if (pending.current) return
@@ -82,7 +87,7 @@ export function RemoteControlPanel(): React.ReactElement {
     finally { setWorking(false) }
   }
   const copy = async (url: string) => {
-    try { await navigator.clipboard.writeText(url); setNotice('配对链接已复制。') }
+    try { await navigator.clipboard.writeText(url); setNotice(''); say('已复制配对链接') }
     catch { setNotice('浏览器不允许自动复制，请选中下面的链接手动复制。') }
   }
   const expired = !!state?.expiresAt && Date.now() >= state.expiresAt
@@ -161,6 +166,7 @@ export function RemoteControlPanel(): React.ReactElement {
     error || state?.error ? h('div', { className: 'dsrc-error', role: 'alert' }, error || state?.error) : null,
     state?.warning ? h('p', { className: 'dsrc-note', role: 'status' }, state.warning) : null,
     notice ? h('p', { className: 'dsrc-note', role: 'status' }, notice) : null,
+    toast ? h('div', { className: 'dsrc-toast', role: 'status', 'aria-live': 'polite' }, h('svg', { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2.4, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true }, h('path', { d: 'm5 12 5 5 9-10' })), toast) : null,
   )
 }
 interface Waiting { enabled: boolean; accent?: Accent; requests: Array<{ id: string; name: string; expiresAt: number }> }
@@ -216,6 +222,7 @@ export const inject = ['slots', 'connection']
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => installAccent(), 'remote-control accent colour')
   ctx.effect(() => { const style = document.createElement('style'); style.dataset.dshRemoteControl = 'true'; style.textContent = CSS; document.head.append(style); return () => style.remove() }, 'remote-control styles')
+  ctx.effect(() => registerNavIcon('远程控制'), 'remote-control: settings nav icon')
   ctx.slots.inject('settings.section', () => ctx.slots.register({ name: 'settings.section', id: 'copylee-remote-control', order: 65, label: () => '远程控制' }, () => h(RemoteControlPanel)))
   ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({ name: 'sidebar.footer.action', id: 'copylee-remote-control', order: 65 }, (props: { wide?: boolean }) => h(SidebarEntry, { wide: props?.wide })))
 }

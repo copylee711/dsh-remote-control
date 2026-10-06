@@ -68,6 +68,15 @@ function BoundChat({ ctx, binding, sessionId, onSession }: { ctx: Host; binding:
   const [follow, setFollow] = React.useState(true), [model, setModel] = React.useState('')
   /** The sheet above the message box: thinking effort, permissions, agent, tool trace. */
   const [options, setOptions] = React.useState(false)
+  /** The menu behind the plus button: what can be added to a message, and the session's slash commands. */
+  const [menu, setMenu] = React.useState(false)
+  // The session's own command catalogue, as the computer's "/" menu reads it. A Host without it leaves the menu with File only.
+  const commands = useLoad<Host[]>(async () => {
+    const list = ctx.remote?.commands?.list
+    if (typeof list !== 'function') return []
+    const rows = value<Host[]>(await list.call(ctx.remote.commands, sessionId))
+    return Array.isArray(rows) ? rows : []
+  }, [ctx, sessionId])
   const scroll = React.useRef<HTMLDivElement>(null), picker = React.useRef<HTMLInputElement>(null), input = React.useRef<HTMLTextAreaElement>(null)
   const action = useAction()
   const models = useLoad<Host>(() => ctx.remote.session.modelCatalog().then(value), [ctx])
@@ -90,8 +99,22 @@ function BoundChat({ ctx, binding, sessionId, onSession }: { ctx: Host; binding:
     el.style.height = `${Math.min(el.scrollHeight, Math.max(120, window.innerHeight / 3))}px`
   }, [draft])
   React.useEffect(() => { if (follow && scroll.current) scroll.current.scrollTop = scroll.current.scrollHeight }, [chat, session.pendingSubmissions, follow])
+  const commandNames = new Set<string>((commands.data ?? []).map((row: Host) => String(row?.name ?? '')))
+  /** Run one slash-command line on the computer; its outcome appears in the conversation. */
+  const runCommand = (line: string) => action.run(async () => {
+    const outcome = value<Host>(await binding.session.command(line))
+    if (outcome && outcome.matched === false) throw new Error(`电脑上没有“${line.split(/\s/)[0]}”这个指令`)
+    setFollow(true)
+  }, '')
   const send = async () => {
     if (!draft.trim() && !attachments.length) return
+    // A line that begins with the name of one of the session's commands is that command, as on the computer.
+    const typed = /^\/([^\s/]+)/.exec(draft.trim())
+    if (typed && commandNames.has(typed[1]!) && !attachments.length) {
+      const line = draft.trim()
+      setDraft('')
+      return runCommand(line)
+    }
     const result = await action.run(async () => {
       const outcome = await ctx.conversation.sendSession(binding.session, draft, attachments.map(a => a.id), 'queue')
       if (outcome?.kind === 'error') throw new Error(outcome.text || '消息提交失败，草稿已保留')
@@ -141,6 +164,11 @@ function BoundChat({ ctx, binding, sessionId, onSession }: { ctx: Host; binding:
     } else if (node.kind === 'tool-result') {
       steps.push({ key: `t${node.seq}`, name: `${node.call?.name || node.callId}${node.isError ? '（失败）' : ''}`,
         body: h(React.Fragment, null, node.call?.argsRaw ? h('pre', null, node.call.argsRaw) : null, h(Blocks, { ctx, sessionId, blocks: node.content })) })
+    } else if (node.kind === 'command') {
+      // A slash command that ran: its name, and what it answered when it answered in words.
+      flush()
+      const said = typeof node.outcome?.text === 'string' ? node.outcome.text : ''
+      messages.push(h('div', { key: `c${node.seq}`, className: node.outcome?.kind === 'error' ? 'rc-error' : 'rc-tool-event' }, `/${node.name}${typeof node.args === 'string' && node.args ? ` ${node.args}` : ''}${said ? ` · ${said}` : ''}`))
     } else if (node.kind === 'turn-error') {
       flush(); messages.push(h('div', { key: node.seq, className: 'rc-error' }, node.message || node.code))
     } else if (trace) {
@@ -158,6 +186,42 @@ function BoundChat({ ctx, binding, sessionId, onSession }: { ctx: Host; binding:
     if (/full|全部|完全/.test(mode) && !await confirmAction('完全权限允许修改电脑文件与设置。继续？')) return
     void action.run(() => binding.session.command(`/permission ${mode}`), '')
   }
+  // The plus menu, in the order of the computer's: things to add, then commands. A row either runs at once or
+  // writes the command into the message box for its words to be added.
+  const KNOWN: Record<string, { label: string; hint: string; section: 'add' | 'command'; fill?: boolean; open?: 'options' }> = {
+    goal: { label: '目标', hint: '设置或查看长期任务目标', section: 'add', fill: true },
+    plan: { label: '计划', hint: '进入或退出计划模式', section: 'add' },
+    feedback: { label: '反馈', hint: '发送关于当前会话的反馈', section: 'add', fill: true },
+    compact: { label: '压缩', hint: '压缩以上对话内容', section: 'command' },
+    permission: { label: '权限', hint: '切换权限预设', section: 'command', open: 'options' },
+    model: { label: '模型', hint: '选择本会话使用的模型', section: 'command', open: 'options' },
+    export: { label: '导出', hint: '导出当前会话', section: 'command' },
+  }
+  const pickCommand = (row: Host) => {
+    const name = String(row.name), known = KNOWN[name]
+    setMenu(false)
+    if (name === 'model') { requestAnimationFrame(() => (document.querySelector('.rc-composer-bar .rc-model') as HTMLElement | null)?.click()); return }
+    if (known?.open === 'options') { setOptions(true); return }
+    if (known ? known.fill : !!row.input?.hint) { setDraft(`/${name} `); requestAnimationFrame(() => input.current?.focus()); return }
+    void runCommand(`/${name}`)
+  }
+  const menuRow = (key: string, title: string, hint: string, onClick: () => void) => h('button', { key, type: 'button', className: 'rc-picker-option', disabled: action.busy, onClick },
+    h('span', { className: 'rc-picker-label' }, title, hint ? h('small', null, hint) : null))
+  const listed = (commands.data ?? []).filter((row: Host) => typeof row?.name === 'string' && row.name)
+  // The computer's order: goal, plan, feedback; then compact, permission, model, export, and whatever else the session has.
+  const ORDER = ['goal', 'plan', 'feedback', 'compact', 'permission', 'model', 'export']
+  const rank = (row: Host) => { const at = ORDER.indexOf(row.name); return at < 0 ? ORDER.length : at }
+  const adds = listed.filter((row: Host) => KNOWN[row.name]?.section === 'add').sort((a: Host, b: Host) => rank(a) - rank(b))
+  // The model list is drawn by this page, not a command of the Host: it has its row all the same.
+  const rest = [...listed.filter((row: Host) => KNOWN[row.name]?.section !== 'add' && row.name !== 'model'), ...(modelOptions.length ? [{ name: 'model' }] : [])]
+    .sort((a: Host, b: Host) => rank(a) - rank(b))
+  const plusMenu = h('div', { className: 'rc-sheet rc-menu', role: 'menu', 'aria-label': '添加与指令' },
+    h('div', { className: 'rc-picker-group' }, '添加'),
+    menuRow('file', '文件', '上传图片或文件', () => { setMenu(false); picker.current?.click() }),
+    ...adds.map((row: Host) => menuRow(row.name, KNOWN[row.name]!.label, KNOWN[row.name]!.hint, () => pickCommand(row))),
+    rest.length ? h('div', { className: 'rc-picker-group' }, '指令') : null,
+    ...rest.map((row: Host) => menuRow(row.name, KNOWN[row.name]?.label ?? `/${row.name}`, KNOWN[row.name]?.hint ?? String(row.description ?? ''), () => pickCommand(row))),
+    commands.error ? h('p', { className: 'rc-muted' }, '指令列表读取失败，仍可上传文件。') : null)
   const sheet = h('div', { className: 'rc-sheet' },
     currentModel?.reasoning?.efforts?.length ? h('div', { className: 'rc-sheet-row' }, '思考强度',
       h(Picker, { className: 'rc-sheet-pick', label: '思考强度', value: selection?.reasoningEffort ?? currentModel.reasoning.defaultEffort ?? '', disabled: action.busy,
@@ -188,6 +252,7 @@ function BoundChat({ ctx, binding, sessionId, onSession }: { ctx: Host; binding:
     h('div', { className: 'rc-composer-wrap' },
       pending ? h(Interaction, { key: pending.key, pending }) : null,
       action.error || session.promptError ? h('div', { className: 'rc-error', role: 'alert' }, action.error || session.promptError?.message || '消息提交失败，请检查连接。不会自动重复发送。') : null,
+      menu ? plusMenu : null,
       options ? sheet : null,
       h('div', { className: 'rc-composer' },
         attachments.length ? h('div', { className: 'rc-attachments' }, ...attachments.map(a => h('span', { key: a.id, className: 'rc-chip' }, a.name || a.file?.name || '附件', uploads[a.id]?.phase ? ` · ${uploads[a.id].phase}` : '',
@@ -203,8 +268,8 @@ function BoundChat({ ctx, binding, sessionId, onSession }: { ctx: Host; binding:
           } }),
         h('div', { className: 'rc-composer-bar' },
           h('input', { type: 'file', accept: '*/*', multiple: true, hidden: true, ref: picker, onChange: (event: React.ChangeEvent<HTMLInputElement>) => { try { setAttachments(previous => [...previous, ...ctx.conversation.createDrafts(sessionId, Array.from(event.target.files || []))]) } catch (e) { action.setError(String(e)) }; event.target.value = '' } }),
-          h('button', { className: 'rc-round rc-plain', 'aria-label': '上传附件', onClick: () => picker.current?.click() }, h(Icon, { name: 'plus' })),
-          h('button', { className: 'rc-round rc-plain', 'aria-label': '会话选项', 'aria-expanded': options, onClick: () => setOptions(!options) }, h(Icon, { name: 'sliders' })),
+          h('button', { className: 'rc-round rc-plain', 'aria-label': '添加文件或使用指令', 'aria-expanded': menu, onClick: () => { setMenu(!menu); setOptions(false) } }, h(Icon, { name: 'plus' })),
+          h('button', { className: 'rc-round rc-plain', 'aria-label': '会话选项', 'aria-expanded': options, onClick: () => { setOptions(!options); setMenu(false) } }, h(Icon, { name: 'sliders' })),
           modelOptions.length ? h(Picker, { className: 'rc-model', label: '会话模型', value: model, disabled: action.busy, placeholder: '选择模型', onChange: pickModel,
             // The same model can be offered by several providers: list them under the provider's name.
             choices: modelOptions.map((m: Host) => ({ value: `${m.provider}/${m.model}`, label: m.name, group: m.providerName })) }) : h('span', { className: 'rc-model rc-muted' }, '默认模型'),
