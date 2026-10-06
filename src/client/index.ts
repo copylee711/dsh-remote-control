@@ -134,7 +134,7 @@ export function RemoteControlPanel(): React.ReactElement {
       h('label', { className: 'dsrc-toggle' }, h('input', { type: 'checkbox', checked: state?.autoStart ?? false, disabled, onChange: (event: React.ChangeEvent<HTMLInputElement>) => { void act('preferences', { autoStart: event.target.checked }) } }), '随 DSH 启动，自动开启所选连接方式'),
       h('div', { className: 'dsrc-note' }, '强调色　', h('span', { className: 'dsrc-swatches', role: 'radiogroup', 'aria-label': '强调色' },
         ...ACCENT_IDS.map(id => h('button', { key: id, type: 'button', className: 'dsrc-swatch', role: 'radio', 'aria-checked': accent === id, 'aria-label': ACCENTS[id].name, title: ACCENTS[id].name, style: { '--rc-swatch': ACCENTS[id].accent } as React.CSSProperties, onClick: () => { chooseAccent(id); void act('preferences', { accent: id }) } }))),
-        '　电脑面板、配对页、手机界面和 copylee 的其他插件共用'),
+        '　电脑面板、配对页和手机界面共用'),
       shown !== 'lan' ? h('div', { className: 'dsrc-note' }, '线路　',
         h('span', { className: 'dsrc-mode dsrc-routes', role: 'group', 'aria-label': '线路' },
           ...([['cloudflare', 'Cloudflare'], ['ssh', 'localhost.run（备用）']] as const).map(([id, name]) =>
