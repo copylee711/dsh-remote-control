@@ -11,6 +11,7 @@
 | Agent 与权限 | agentPresets.list/select、permissions projection、permission command | 会话前选择 Agent，权限使用宿主目录；预设本身由宿主／插件定义 |
 | 消息、Markdown、代码、图片 | uiConversation 的 chat target / SDK MarkdownText / imageUrl | 不复制日志折叠、Agent 或模型请求业务；流式回复通过 |
 | 附件与停止 | conversation.createDrafts/sendSession、Session.cancel | 二进制附件上传通过；提交失败保留草稿 |
+| “+”菜单与斜杠指令 | commands.list、Session.command | 目标、计划、反馈、压缩、导出及会话的其他指令；结果作为会话里的指令节点显示；权限、模型两行打开本页自己的选择器 |
 | 工具审批 | uiSession pendingInteraction 的 approval carrier | 真实审批服务，测试工具仅执行一次 |
 | 用户问题与方案审核 | SDK PendingQuestion carrier | 单选、多选、自由回答、方案 Markdown；多选真实闭环通过；沿用宿主倒计时与答复渠道 |
 | 工具轨迹与子任务 | chat folded nodes、sessions lineage | 工具参数、结果、错误、思考、历史；子会话可切换查看 |

@@ -123,4 +123,8 @@ export const CSS = `
 .dsrc-dialog{background:var(--dsw-alias-background-primary,#242321)}
 }
 .dsrc{--rc-accent:var(--cl-accent,#D97757);--rc-accent-hover:color-mix(in srgb,var(--rc-accent) 88%,#000);--rc-accent-ink:var(--cl-accent-ink,#fff)}
+
+.dsrc-toast{position:fixed;left:50%;top:28px;transform:translateX(-50%);z-index:2147483000;display:flex;align-items:center;gap:8px;padding:10px 18px;border-radius:999px;background:#1f2328;color:#fff;font-size:14px;font-weight:600;box-shadow:0 8px 28px rgba(0,0,0,.28);animation:dsrc-toast-in .18s ease-out}
+.dsrc-toast svg{width:16px;height:16px;color:#7ee2a8}
+@keyframes dsrc-toast-in{from{opacity:0;transform:translate(-50%,-8px)}to{opacity:1;transform:translate(-50%,0)}}
 `
