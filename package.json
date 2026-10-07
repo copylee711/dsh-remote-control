@@ -1,6 +1,6 @@
 {
   "name": "@copylee/dsh-remote-control",
-  "version": "0.2.6",
+  "version": "0.2.7",
   "description": "DSH 扫码远程控制：独立移动界面、本机确认配对、untun 免费公网穿透与局域网直连",
   "type": "module",
   "license": "MIT",
