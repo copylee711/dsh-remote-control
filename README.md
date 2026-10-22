@@ -1,5 +1,6 @@
 # dsh-remote-control
 
+[![Awesome DSH Plugin](https://awesome-dsh-plugin.com/badge.svg)](https://awesome-dsh-plugin.com)
 [![npm](https://img.shields.io/npm/v/@copylee/dsh-remote-control)](https://www.npmjs.com/package/@copylee/dsh-remote-control)
 
 DeepSeek Harness（DSH）的远程控制插件：手机扫码、在电脑上确认后，用手机浏览器继续自己电脑上的会话、处理审批、查看文件和管理设置。电脑上的桌面应用和 `dsh web` 界面保持原样。
