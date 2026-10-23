@@ -5,6 +5,30 @@
  * message instead of breaking the page.
  */
 import type { Host } from './common.js'
+import * as React from 'react'
+
+/** Check capabilities before mounting a feature's hooks. */
+export function missingCapabilities(ctx: Host, paths: string[]): string[] {
+  return paths.filter(path => {
+    try {
+      let current = ctx
+      for (const key of path.split('.')) current = current?.[key]
+      return typeof current !== 'function'
+    } catch { return true }
+  })
+}
+export function CapabilityNotice({ missing }: { missing: string[] }): React.ReactElement {
+  return React.createElement('section', { className: 'rc-error', role: 'alert' },
+    React.createElement('p', null, `宿主未提供当前功能所需的服务：${missing.join('、')}。请检查 DSH 版本及相关插件是否启用。其他页面仍可使用。`),
+    React.createElement('button', { onClick: () => location.reload() }, '重新加载'), ' ',
+    React.createElement('a', { href: '/?ui=native' }, '打开原生界面'))
+}
+/** Resolve namespaces at call time so disabled/removed optional Host services fail locally. */
+export async function callRemote(ctx: Host, namespace: string, method: string, ...args: Host[]): Promise<Host> {
+  const service = ctx.remote?.[namespace]
+  if (typeof service?.[method] !== 'function') throw new Error(`宿主未提供 ${namespace}.${method}，请检查 DSH 版本及相关插件是否启用，或打开原生界面。`)
+  return service[method](...args)
+}
 
 export interface ChatContent { nodes: Host[]; partial: { blocks: Host[] } | null; runningCalls: Host[] }
 const EMPTY_CHAT: ChatContent = { nodes: [], partial: null, runningCalls: [] }

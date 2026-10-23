@@ -7,6 +7,7 @@ import { registerNavIcon } from './nav-icon.js'
 const h = React.createElement
 const ROUTE = '/api/dsh-remote-control/manage'
 interface Status {
+  ui?: 'custom' | 'native'
   enabled: boolean; busy: boolean; mode: 'public' | 'lan' | 'fixed'; activeMode?: 'public' | 'lan' | 'fixed'; autoStart: boolean; proxyConfigured: boolean; proxyMode?: 'system' | 'manual' | 'off'; manualProxy?: string; systemProxy?: { url: string; source: string } | null; accent?: Accent; route?: string; activeRoute?: string; routeNote?: string
   phase: string; error?: string; warning?: string; gatewayPort: number; local: boolean; expiresAt?: number; qr?: string
   links: Array<{ base: string; url?: string }>; requests: Array<{ id: string; name: string; expiresAt: number }>
@@ -119,6 +120,13 @@ export function RemoteControlPanel(): React.ReactElement {
       h('span', { className: 'dsrc-badge', 'data-ready': state?.phase === 'ready' }, h('span', { className: 'dsrc-dot' }), phaseLabels[state?.phase ?? 'off'] ?? '读取状态')),
     h('section', { className: 'dsrc-surface' },
       h('h3', null, '连接方式'),
+      h('div', { className: 'dsrc-note' }, '手机连接后使用的界面',
+        h('div', { className: 'dsrc-mode', role: 'group', 'aria-label': '手机界面' },
+          ...([['custom', '自定义界面'], ['native', '原生界面']] as const).map(([id, title]) =>
+            h('button', { key: id, type: 'button', 'aria-pressed': (state?.ui ?? 'custom') === id, disabled, onClick: () => { void act('preferences', { ui: id }) } }, title))),
+        h('p', null, '下次打开或刷新手机页面时生效，无需重新配对。自定义界面异常时，也可直接打开原生界面。'),
+        state?.local ? null : h('a', { href: '/?ui=native' }, '打开原生界面')),
+      h('p', { className: 'dsrc-note' }, '当前按 DSH 0.2.1-rc.2 接口适配。若部分功能提示服务缺失，请检查相关插件是否启用，或改用原生界面。'),
       h('div', { className: 'dsrc-ways', role: 'radiogroup', 'aria-label': '连接方式' },
         ...WAYS.map(way => h('button', { key: way.mode, type: 'button', role: 'radio', className: 'dsrc-way', 'aria-checked': shown === way.mode, disabled, onClick: () => choose(way.mode) },
           h('span', { className: 'dsrc-way-mark' }),

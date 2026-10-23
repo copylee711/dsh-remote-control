@@ -1,3 +1,4 @@
+import { callRemote, CapabilityNotice, missingCapabilities } from './host.js'
 import { ask, confirmAction } from './dialog.js'
 import * as React from 'react'
 import { useLoad, useAction, value, useBackClose, type Host } from './common.js'
@@ -16,6 +17,10 @@ function bytes(data: unknown): Uint8Array<ArrayBuffer> {
 }
 const h = React.createElement
 export function Files({ ctx, sessionId }: { ctx: Host; sessionId?: string }) {
+  const missing = missingCapabilities(ctx, ['remote.workspaceFiles.list'])
+  return missing.length ? h(CapabilityNotice, { missing }) : h(ReadyFiles, { ctx, sessionId })
+}
+function ReadyFiles({ ctx, sessionId }: { ctx: Host; sessionId?: string }) {
   const [path, setPath] = React.useState(''), [preview, setPreview] = React.useState(''), [selected, setSelected] = React.useState('')
   const [media, setMedia] = React.useState<{ url: string; pdf: boolean }>(), [partial, setPartial] = React.useState(false)
   React.useEffect(() => () => { if (media) URL.revokeObjectURL(media.url) }, [media])
@@ -24,17 +29,17 @@ export function Files({ ctx, sessionId }: { ctx: Host; sessionId?: string }) {
     const types: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', pdf: 'application/pdf' }
     const mime = types[file.split('.').at(-1)?.toLowerCase() || '']
     if (mime) {
-      const result = value(await ctx.remote.workspaceFiles.readBytes(sessionId, file, {}))
+      const result = value(await callRemote(ctx, 'workspaceFiles', 'readBytes', sessionId, file, {}))
       if (!result.eof) throw new Error('文件超过宿主预览上限，请在电脑上打开。')
       setMedia({ url: URL.createObjectURL(new Blob([bytes(result.data)], { type: mime })), pdf: mime === 'application/pdf' })
-    } else { const result = value(await ctx.remote.workspaceFiles.read(sessionId, file, {})); setPreview(result.text); setPartial(!result.eof) }
+    } else { const result = value(await callRemote(ctx, 'workspaceFiles', 'read', sessionId, file, {})); setPreview(result.text); setPartial(!result.eof) }
   }
-  const list = useLoad<Host>(async () => sessionId ? value(await ctx.remote.workspaceFiles.list(sessionId, path || '.')) : undefined, [ctx, sessionId, path]), action = useAction()
-  const nativeOpen = useLoad<boolean>(() => ctx.remote.session.canOpenWorkspacePath().then(value), [ctx])
+  const list = useLoad<Host>(async () => sessionId ? value(await callRemote(ctx, 'workspaceFiles', 'list', sessionId, path || '.')) : undefined, [ctx, sessionId, path]), action = useAction()
+  const nativeOpen = useLoad<boolean>(() => callRemote(ctx, 'session', 'canOpenWorkspacePath').then(value), [ctx])
   /** Go to a folder; a preview belongs to the folder it was opened from. */
   const open = (folder: string) => { setPath(folder); setSelected(''); setPreview(''); setMedia(undefined); setPartial(false) }
   const download = async (file: string) => {
-    const result = value(await ctx.remote.workspaceFiles.readBytes(sessionId, file, {}))
+    const result = value(await callRemote(ctx, 'workspaceFiles', 'readBytes', sessionId, file, {}))
     if (!result.eof) throw new Error('文件超过宿主本次读取上限，下载未完成。请在电脑上取回完整文件。')
     const data = bytes(result.data)
     const url = URL.createObjectURL(new Blob([data])), anchor = document.createElement('a')
@@ -77,5 +82,5 @@ export function Files({ ctx, sessionId }: { ctx: Host; sessionId?: string }) {
           partial ? h('p', { className: 'rc-notice' }, '只显示了开头一部分；下载可以取回完整文件。') : null),
         h('div', { className: 'rc-actions rc-preview-actions' },
           h('button', { disabled: action.busy, onClick: () => { void action.run(() => download(selected), '') } }, '下载'),
-          h('button', { disabled: !nativeOpen.data, title: nativeOpen.data ? undefined : '这台电脑没有启用这个功能', onClick: async () => { if (await confirmAction('会在电脑上用对应的程序打开这个文件，手机上不会打开。继续？')) void action.run(() => ctx.remote.session.openWorkspacePath({ sessionId, path: selected }), '已在电脑上打开') } }, '在电脑上打开'))) : null)))
+          h('button', { disabled: !nativeOpen.data, title: nativeOpen.data ? undefined : '这台电脑没有启用这个功能', onClick: async () => { if (await confirmAction('会在电脑上用对应的程序打开这个文件，手机上不会打开。继续？')) void action.run(() => callRemote(ctx, 'session', 'openWorkspacePath', { sessionId, path: selected }), '已在电脑上打开') } }, '在电脑上打开'))) : null)))
 }

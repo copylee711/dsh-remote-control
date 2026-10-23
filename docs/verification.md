@@ -1,5 +1,32 @@
 # 0.2.x 验证记录
 
+## 0.2.8 / issue #1（2026-10-23）
+
+### 原因与接口核对
+
+在隔离 DSH Web 0.2.1-rc.2 上复现 0.2.7 的 `Cannot read properties of undefined (reading 'list')`。官方发布包仍提供 `ctx.sessions.list`、`ctx.workspaces.list` 和 `ctx.remote.*`，并未把这些服务统一改成另一个命名空间。实际问题是自定义启动器缺少新版平台种子模块 `zod` 与 `@tanstack/react-virtual`，导致 Remote、会话等客户端模块未激活；`loader.await()` 只等待任务结束，不能保证每个服务已加载，后续读取 `ctx.sessions.list` 才报错。
+
+将内置客户端运行时及原生前端对齐到 0.2.1-rc.2，补齐种子模块。读取客户端服务前检查形状；Remote 调用统一检查命名空间和方法；异步加载同时捕获同步抛错、Promise 拒绝并忽略过期结果。基础服务缺失时提供恢复入口，可选服务缺失时只提示对应功能。
+
+### 本轮验证
+
+| 检查 | 结果 |
+|---|---|
+| `pnpm typecheck`、`pnpm test`、`pnpm build` | 通过：6 个测试文件、45 项测试 |
+| `pnpm install --frozen-lockfile --ignore-scripts` | 通过，锁文件无需修改 |
+| `npm pack --dry-run --ignore-scripts --json` + `scripts/check-package.mjs` | 通过：103 个文件、57 个懒加载块，不包含 QA 数据或开发文件 |
+| 新增根页面回归测试 | 修复前准确触发 `reading 'list'`，修复后显示服务说明及原生 UI 链接 |
+| DSH Web 0.2.1-rc.2，隔离 profile，局域网 | 23 项功能检查通过；另两个第三方插件未加载，未计入通过数 |
+| Electron 0.2.1-rc.2，隔离 profile，局域网 | 25 / 25 通过，包括 computer-use 与 proxy 的设置页 |
+| `scripts/issue-1-qa.mjs`，Web 与 Electron | 各 7 项通过：未授权拦截、模块全部激活、默认 UI 保存及刷新、临时切换、Agent 预设缺失保留输入、文件服务缺失提示、原生回退 |
+| UI 静态检查 | frontend-design-premium strict audit：0 findings；沿用 `docs/ui-spec.md` 与现有控件 |
+
+完整功能脚本为 `scripts/remote-qa.mjs`；专项脚本为 `scripts/issue-1-qa.mjs`。测试使用实际宿主和本地确定性模型，不调用外部模型。Desktop Fetch 测试适配了新版要求的 owner Peer；断网恢复后的自动化检查改为先核验 RPC 成功再读取结果，避免测试脚本因暂未恢复的命名空间报 `.length` 错误。
+
+本轮没有复测实体 Android/iPhone、Cloudflare 公网通道或大陆手机直连。下方旧版公网与设备记录属于历史验证，不代表 0.2.8 已重新覆盖。0.2.8 的最低宿主声明提升到 0.2.1-rc.2；旧版 DSH 可继续使用 0.2.7。
+
+---
+
 日期：2026-10-03。0.1.0 的记录见 [verification-v0.1.md](verification-v0.1.md)。
 
 ## 自动检查

@@ -20,7 +20,7 @@ export interface GatewayOptions {
   upstreamCookie: () => string
   manage: (input: Record<string, unknown>, local: boolean) => Promise<unknown>
   /** Render the official Web GUI when the Desktop Host has no HTTP index. */
-  index?: () => Promise<string>
+  index?: (ui?: 'custom' | 'native') => Promise<string>
   asset?: (path: string, res: ServerResponse, req: IncomingMessage) => Promise<boolean>
   /** Addresses this computer can currently be reached at (LAN mode); read on every request, since they change with the network. */
   addresses?: () => string[]
@@ -142,7 +142,8 @@ export class Gateway {
       return
     }
     if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html') && this.options.index) {
-      const html = injectBoot(await this.options.index())
+      const ui = url.searchParams.get('ui')
+      const html = injectBoot(await this.options.index(ui === 'custom' || ui === 'native' ? ui : undefined))
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'referrer-policy': 'no-referrer' }); res.end(html); return
     }
     if ((req.method === 'GET' || req.method === 'HEAD') && this.options.asset && await this.options.asset(url.pathname, res, req)) return

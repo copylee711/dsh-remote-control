@@ -127,11 +127,18 @@ try {
     await page.getByRole('button', { name: '‹ 返回设置分类', exact: true }).click()
   }
   await page.getByRole('button', { name: /^自动化/ }).click(); await page.waitForTimeout(500)
-  const count = await page.evaluate(async () => (await globalThis.__DSH_RC_CONTEXT__.remote.schedule.catalog()).value.length)
+  // A reconnect can settle namespaces at different times. Check the actual RPC
+  // result before reading its value instead of crashing the harness on .length.
+  const scheduleCount = () => page.evaluate(async () => {
+    const result = await globalThis.__DSH_RC_CONTEXT__.remote.schedule.catalog()
+    return result.ok && Array.isArray(result.value) ? result.value.length : undefined
+  })
+  await expect.poll(scheduleCount, { timeout: 15000 }).not.toBeUndefined()
+  const count = await scheduleCount()
   await page.getByRole('textbox', { name: '任务名称', exact: true }).fill('remote-control QA 每日任务')
   await page.getByRole('textbox', { name: '指令', exact: true }).fill('隔离环境测试任务')
   await page.getByRole('button', { name: '创建每日任务', exact: true }).click(); await page.getByText('任务已创建', { exact: true }).waitFor()
-  await expect.poll(() => page.evaluate(async () => (await globalThis.__DSH_RC_CONTEXT__.remote.schedule.catalog()).value.length)).toBe(count + 1)
+  await expect.poll(scheduleCount).toBe(count + 1)
   const task = page.locator('section.rc-card').filter({ has: page.getByRole('heading', { name: 'remote-control QA 每日任务', exact: true }) })
   await task.getByRole('button', { name: '编辑指令', exact: true }).click(); await page.getByRole('dialog').getByRole('textbox').fill('隔离环境修改后的任务'); await page.getByRole('dialog').getByRole('button', { name: '确认', exact: true }).click()
   await task.getByText('隔离环境修改后的任务', { exact: true }).waitFor()

@@ -9,6 +9,8 @@ import { mkdtempSync, rmSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+const OWNER = { principal: { kind: "owner" } } as Connection.PeerScope
+
 it('creates a private HTTP adapter for a carrier-only Host and handles trusted Desktop Fetch', async () => {
   const folder = mkdtempSync(join(tmpdir(), 'dsh-rc-host-')), previous = process.env.DSH_HOME
   process.env.DSH_HOME = folder
@@ -22,7 +24,7 @@ it('creates a private HTTP adapter for a carrier-only Host and handles trusted D
     let result: Response | undefined
     for (let attempt = 0; attempt < 100; attempt++) {
       if (ctx.get('webServer')?.port) {
-        result = await ctx.connection.createSharedFetchHandler('/api').fetch(new Request('http://desktop.internal' + MANAGE_PATH, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'status' }) }))
+        result = await ctx.connection.createSharedFetchHandler('/api').fetch(new Request('http://desktop.internal' + MANAGE_PATH, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'status' }) }), OWNER)
         if (result.status === 200) break
       }
       await new Promise(resolve => setTimeout(resolve, 10))
@@ -47,7 +49,7 @@ async function withHost(run: (command: (action: string, fields?: Record<string, 
   try {
     await ctx.plugin(Connection, {}); await ctx.plugin(Plugin, {})
     const command = async (action: string, fields: Record<string, unknown> = {}) => {
-      const response = await ctx.connection.createSharedFetchHandler('/api').fetch(new Request('http://desktop.internal' + MANAGE_PATH, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action, ...fields }) }))
+      const response = await ctx.connection.createSharedFetchHandler('/api').fetch(new Request('http://desktop.internal' + MANAGE_PATH, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action, ...fields }) }), OWNER)
       const data = await response.json(); return { ...data, status: response.status }
     }
     await vi.waitFor(async () => expect((await command('status')).status).toBe(200))
@@ -58,6 +60,16 @@ async function withHost(run: (command: (action: string, fields?: Record<string, 
     rmSync(folder, { recursive: true, force: true })
   }
 }
+
+it('persists a default UI without restarting the live gateway and rejects unknown UIs', async () => withHost(async command => {
+  expect((await command('status')).ui).toBe('custom')
+  await command('preferences', { mode: 'lan' }); const started = await command('start')
+  const selected = await command('preferences', { ui: 'native' })
+  expect(selected).toMatchObject({ ui: 'native', gatewayPort: started.gatewayPort, enabled: true })
+  expect(selected.links).toEqual(started.links)
+  expect((await command('preferences', { ui: 'unknown' })).status).toBe(400)
+  expect((await command('status')).ui).toBe('native')
+}))
 
 it('keeps the running LAN entry and QR while saving a different mode or proxy', async () => withHost(async command => {
   await command('preferences', { mode: 'lan' })

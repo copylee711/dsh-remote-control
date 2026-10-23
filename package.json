@@ -1,6 +1,6 @@
 {
   "name": "@copylee/dsh-remote-control",
-  "version": "0.2.7",
+  "version": "0.2.8",
   "description": "DSH 扫码远程控制：独立移动界面、本机确认配对、untun 免费公网穿透与局域网直连",
   "type": "module",
   "license": "MIT",
@@ -49,7 +49,7 @@
   ],
   "dsh": {
     "engines": {
-      "dsh": ">=0.2.0-rc.2"
+      "dsh": ">=0.2.1-rc.2"
     },
     "bundle": {
       "patch": "./cordis.patch.yml"
@@ -72,10 +72,11 @@
     "prepack": "npm run build",
     "qa:host": "node scripts/launch-qa.mjs",
     "qa:desktop": "node scripts/launch-desktop-qa.mjs",
-    "qa:browser": "node scripts/remote-qa.mjs"
+    "qa:browser": "node scripts/remote-qa.mjs",
+    "qa:issue-1": "node scripts/issue-1-qa.mjs"
   },
   "dependencies": {
-    "@deepseek-ai/dsh-web-frontend": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-web-frontend": "0.2.1-rc.2",
     "qrcode": "^1.5.4",
     "undici": "^7.30.0",
     "untun": "0.2.2",
@@ -93,22 +94,23 @@
     }
   },
   "devDependencies": {
-    "@deepseek-ai/cordis": "~4.0.4",
-    "@deepseek-ai/cordis-plugin-loader": "1.0.5",
-    "@deepseek-ai/dsh": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-api-gateway": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-client-connection": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-client-modules": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-client-store": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-client-ui-dockkit": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-client-ui-primitives": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-client-ui-slots": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-host-webserver": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-util-code-language": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-util-workspace-path": "0.2.0-rc.2",
-    "@deepseek-ai/schemastery": "3.18.4",
+    "@deepseek-ai/cordis": "~4.0.5",
+    "@deepseek-ai/cordis-plugin-loader": "1.0.6",
+    "@deepseek-ai/dsh": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-api-gateway": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-client-connection": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-client-modules": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-client-store": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-client-ui-dockkit": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-client-ui-primitives": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-client-ui-slots": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-host-webserver": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-util-code-language": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-util-workspace-path": "0.2.1-rc.2",
+    "@deepseek-ai/schemastery": "3.18.5",
     "@playwright/test": "^1.56.0",
     "@shikijs/langs": "^4.5.0",
+    "@tanstack/react-virtual": "3.13.12",
     "@tsdown/css": "^0.22.14",
     "@types/node": "^22.20.0",
     "@types/qrcode": "^1.5.5",
@@ -139,6 +141,7 @@
     "tsdown": "^0.22.2",
     "typescript": "^6.0.3",
     "vitest": "^4.1.8",
+    "zod": "4.4.3",
     "zustand": "4.4.7"
   }
 }

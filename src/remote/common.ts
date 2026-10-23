@@ -24,7 +24,9 @@ export function useLoad<T>(load: () => Promise<T>, dependencies: React.Dependenc
   const [data, setData] = React.useState<T>(), [error, setError] = React.useState(''), [revision, setRevision] = React.useState(0)
   React.useEffect(() => {
     let live = true; setError('')
-    load().then(result => { if (live) setData(result) }, failure => { if (live) setError(String(failure.message || failure)) })
+    setData(undefined)
+    // Missing optional services can throw before returning a promise.
+    Promise.resolve().then(load).then(result => { if (live) setData(result) }, failure => { if (live) setError(String(failure.message || failure)) })
     return () => { live = false }
   }, [...dependencies, revision])
   return { data, error, reload: () => setRevision(n => n + 1) }
@@ -81,7 +83,8 @@ export class Boundary extends React.Component<{ children?: React.ReactNode; what
     return React.createElement('div', { className: 'rc-error', role: 'alert' },
       `${this.props.what ?? '这部分内容'}暂时无法显示：${this.state.error}`,
       React.createElement('button', { onClick: () => this.setState({ error: '' }) }, '重试'),
-      React.createElement('button', { onClick: () => location.reload() }, '重新加载'))
+      React.createElement('button', { onClick: () => location.reload() }, '重新加载'),
+      React.createElement('a', { href: '/?ui=native' }, '打开原生界面'))
   }
 }
 export function label(item: any, fallback = ''): string {

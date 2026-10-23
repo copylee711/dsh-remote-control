@@ -4,7 +4,7 @@ import { MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
 import { useStore, useLoad, useAction, value, cacheText, cachedText, type Host } from './common.js'
 import { Icon } from './icons.js'
 import { Picker } from './picker.js'
-import { chatContent, pendingInteraction } from './host.js'
+import { callRemote, chatContent, pendingInteraction, CapabilityNotice, missingCapabilities } from './host.js'
 const h = React.createElement
 const markdownLabels = { code: { copyLabel: '复制代码', copiedLabel: '已复制' }, footnotes: '注释' }
 /**
@@ -29,10 +29,16 @@ export function Markdown({ text, streaming = false, cwd }: { text: string; strea
 }
 
 export function Chat({ ctx, sessionId, onSession }: { ctx: Host; sessionId: string; onSession: (id: string) => void }): React.ReactElement {
+  const missing = missingCapabilities(ctx, ['sessions.retain', 'uiConversation.binding', 'uiSession.sessionStatus.getSnapshot', 'conversation.fileUploads.getSnapshot', 'conversation.sendSession'])
+  return missing.length ? h(CapabilityNotice, { missing }) : h(ReadyChat, { ctx, sessionId, onSession })
+}
+function ReadyChat({ ctx, sessionId, onSession }: { ctx: Host; sessionId: string; onSession: (id: string) => void }): React.ReactElement {
   const [binding, setBinding] = React.useState<Host>(), [openError, setOpenError] = React.useState('')
   React.useEffect(() => {
     let live = true
-    const ref = ctx.sessions.retain(sessionId, { source: 'controllerOperation' })
+    let ref: Host
+    try { ref = ctx.sessions.retain(sessionId, { source: 'controllerOperation' }) }
+    catch (failure) { setOpenError(failure instanceof Error ? failure.message : String(failure)); return }
     ref.ready.then((next: Host) => { if (live) setBinding(next) }, (failure: Error) => { if (live) setOpenError(failure.message) })
     return () => { live = false; ref.release() }
   }, [ctx, sessionId])
@@ -79,9 +85,9 @@ function BoundChat({ ctx, binding, sessionId, onSession }: { ctx: Host; binding:
   }, [ctx, sessionId])
   const scroll = React.useRef<HTMLDivElement>(null), picker = React.useRef<HTMLInputElement>(null), input = React.useRef<HTMLTextAreaElement>(null)
   const action = useAction()
-  const models = useLoad<Host>(() => ctx.remote.session.modelCatalog().then(value), [ctx])
-  const permissions = useLoad<Host>(() => ctx.remote.permissionPresets.catalog().then(value), [ctx])
-  const presets = useLoad<Host>(() => ctx.remote.agentPresets.list().then(value), [ctx])
+  const models = useLoad<Host>(() => callRemote(ctx, 'session', 'modelCatalog').then(value), [ctx])
+  const permissions = useLoad<Host>(() => callRemote(ctx, 'permissionPresets', 'catalog').then(value), [ctx])
+  const presets = useLoad<Host>(() => callRemote(ctx, 'agentPresets', 'list').then(value), [ctx])
   const permissionSource = React.useMemo(() => binding.session.projections.faceOf('permissions'), [binding])
   const permission = useStore(permissionSource)
   const presetSource = React.useMemo(() => binding.session.projections.faceOf('agentPreset'), [binding])
@@ -180,7 +186,7 @@ function BoundChat({ ctx, binding, sessionId, onSession }: { ctx: Host; binding:
 
   const pickModel = (key: string) => {
     const picked = modelOptions.find((m: Host) => `${m.provider}/${m.model}` === key)
-    if (picked) void action.run(async () => { value(await ctx.remote.session.selectModel({ sessionId, provider: picked.provider, model: picked.model })); setModel(`${picked.provider}/${picked.model}`) }, '')
+    if (picked) void action.run(async () => { value(await callRemote(ctx, 'session', 'selectModel', { sessionId, provider: picked.provider, model: picked.model })); setModel(`${picked.provider}/${picked.model}`) }, '')
   }
   const pickPermission = async (mode: string) => {
     if (/full|全部|完全/.test(mode) && !await confirmAction('完全权限允许修改电脑文件与设置。继续？')) return
@@ -226,20 +232,22 @@ function BoundChat({ ctx, binding, sessionId, onSession }: { ctx: Host; binding:
     currentModel?.reasoning?.efforts?.length ? h('div', { className: 'rc-sheet-row' }, '思考强度',
       h(Picker, { className: 'rc-sheet-pick', label: '思考强度', value: selection?.reasoningEffort ?? currentModel.reasoning.defaultEffort ?? '', disabled: action.busy,
         choices: currentModel.reasoning.efforts.map((effort: Host) => ({ value: effort.id, label: effort.name })),
-        onChange: (effort: string) => { void action.run(() => ctx.remote.session.selectModel({ sessionId, provider: currentModel.provider, model: currentModel.model, reasoningEffort: effort }), '') } })) : null,
+        onChange: (effort: string) => { void action.run(() => callRemote(ctx, 'session', 'selectModel', { sessionId, provider: currentModel.provider, model: currentModel.model, reasoningEffort: effort }), '') } })) : null,
     permissions.data?.options?.length ? h('div', { className: 'rc-sheet-row' }, '权限模式',
       h(Picker, { className: 'rc-sheet-pick', label: '权限模式', value: permission?.currentValue ?? '', disabled: action.busy, placeholder: '未选择', onChange: (mode: string) => { void pickPermission(mode) },
         choices: permissions.data.options.map((option: Host) => ({ value: option.value, label: option.name, hint: option.description })) })) : null,
     presets.data?.presets?.length ? h('div', { className: 'rc-sheet-row', title: session.blank ? undefined : '会话开始后 Agent 配置固定' }, 'Agent',
       h(Picker, { className: 'rc-sheet-pick', label: 'Agent 预设', value: typeof preset === 'string' ? preset : '', disabled: action.busy || !session.blank, placeholder: '默认 Agent',
         choices: [{ value: '', label: '默认 Agent' }, ...presets.data.presets.map((option: Host) => ({ value: option.id, label: option.name || option.id, disabled: !!option.broken }))],
-        onChange: (id: string) => { void action.run(() => ctx.remote.agentPresets.select(sessionId, id), '') } })) : null,
+        onChange: (id: string) => { void action.run(() => callRemote(ctx, 'agentPresets', 'select', sessionId, id), '') } })) : null,
     h('label', { className: 'rc-sheet-row' }, '显示工具轨迹',
       h('input', { type: 'checkbox', checked: trace, onChange: (e: React.ChangeEvent<HTMLInputElement>) => setView(e.target.checked ? 'trace' : 'chat') })))
 
   return h(React.Fragment, null,
     h('div', { className: 'rc-scroll', ref: scroll, onScroll: () => { const el = scroll.current; if (el) setFollow(el.scrollHeight - el.scrollTop - el.clientHeight < 100) } },
       h('div', { className: 'rc-chat' },
+        ...[models, permissions, presets].filter(load => load.error).map((load, index) => h('p', { key: `capability-${index}`, className: 'rc-notice', role: 'alert' },
+          load.error, ' ', h('button', { className: 'rc-text', onClick: load.reload }, '重试'), ' ', h('a', { href: '/?ui=native' }, '打开原生界面'))),
         session.hasMore ? h('button', { className: 'rc-pill rc-older', disabled: session.loadingOlder, onClick: () => { void action.run(() => binding.session.loadOlder(), '') } }, '加载更早的消息') : null,
         empty ? h('div', { className: 'rc-welcome' }, h('h1', null, '今天，我们继续做什么？'), h('p', null, '这里与你的电脑共享同一个会话。')) : null,
         ...messages,

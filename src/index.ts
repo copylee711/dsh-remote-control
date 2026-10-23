@@ -30,7 +30,7 @@ const isRoute = (value: unknown): value is Route => ROUTE_IDS.includes(value as 
 type ProxyMode = 'system' | 'manual' | 'off'
 const isProxyMode = (value: unknown): value is ProxyMode => value === 'system' || value === 'manual' || value === 'off'
 interface Preferences {
-  autoStart: boolean; mode: Mode; proxy?: string; proxyMode: ProxyMode; accent: Accent; route: Route
+  autoStart: boolean; mode: Mode; proxy?: string; proxyMode: ProxyMode; accent: Accent; route: Route; ui: 'custom' | 'native'
   /** The port last used, tried again so the address a phone knows keeps working after a restart. */
   port?: number
 }
@@ -72,12 +72,12 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   const storage = join(process.env.DSH_HOME || join(homedir(), '.dsh'), 'dsh-remote-control', String(profile?.name || process.env.DSH_PROFILE || 'default').replace(/[^a-zA-Z0-9_-]/g, '_'))
   mkdirSync(storage, { recursive: true })
   const prefsFile = join(storage, 'preferences.json')
-  let preferences: Preferences = { autoStart: false, mode: 'public', proxyMode: 'off', accent: 'orange', route: 'cloudflare' }
+  let preferences: Preferences = { autoStart: false, mode: 'public', proxyMode: 'off', accent: 'orange', route: 'cloudflare', ui: 'custom' }
   let error: string | undefined
   if (existsSync(prefsFile)) {
     try {
       const stored = JSON.parse(readFileSync(prefsFile, 'utf8')) as Partial<Preferences>
-      preferences = { autoStart: stored.autoStart === true, mode: ['public', 'lan', 'fixed'].includes(String(stored.mode)) ? stored.mode! : 'public', proxy: typeof stored.proxy === 'string' ? stored.proxy : undefined,
+      preferences = { ui: stored.ui === 'native' ? 'native' : 'custom', autoStart: stored.autoStart === true, mode: ['public', 'lan', 'fixed'].includes(String(stored.mode)) ? stored.mode! : 'public', proxy: typeof stored.proxy === 'string' ? stored.proxy : undefined,
         // No proxy unless asked for: a proxy's exit address is often one Cloudflare refuses, while the direct
         // route works. An address typed in before there was a choice still counts as asked for.
         proxyMode: isProxyMode(stored.proxyMode) ? stored.proxyMode : stored.proxy ? 'manual' : 'off', port: Number.isInteger(stored.port) && stored.port! > 0 && stored.port! < 65536 ? stored.port : undefined, accent: isAccent(stored.accent) ? stored.accent : 'orange', route: isRoute(stored.route) ? stored.route : 'cloudflare' }
@@ -108,7 +108,16 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     let credential = hostCookie(ready.connection, upstreamPort)
     const require = createRequire(import.meta.url)
     const distRoot = join(dirname(require.resolve('@deepseek-ai/dsh-web-frontend/package.json')), 'dist')
-    const renderIndex = async () => ready.webServer.renderIndex((await readFile(join(distRoot, 'index.html'), 'utf8')).replace(/<script type="module"[^>]*src="[^"]+"[^>]*><\/script>/, '<script type="module" src="/rc-assets/remote.js"></script><link rel="stylesheet" href="/rc-assets/style.css">').replace('<title>DeepSeek Harness</title>', '<title>DSH · 远程</title>'))
+    const renderIndex = async (ui = preferences.ui) => {
+      let html = await readFile(join(distRoot, 'index.html'), 'utf8')
+      if (ui === 'custom') {
+        html = html.replace(/<script type="module"[^>]*src="[^"]+"[^>]*><\/script>/, '<script type="module" src="/rc-assets/remote.js"></script><link rel="stylesheet" href="/rc-assets/style.css">')
+          .replace('<div id="root"></div>', '<div id="root"><p>正在加载远程界面…</p><a href="/?ui=native">打开原生界面</a></div>')
+      } else {
+        html = html.replace('</body>', '<a href="/?ui=custom" style="position:fixed;right:12px;bottom:8px;z-index:10000;padding:6px 12px;background:Canvas;color:CanvasText;border:1px solid currentColor;border-radius:8px;font:13px system-ui">返回自定义界面</a></body>')
+      }
+      return ready.webServer.renderIndex(html.replace('<title>DeepSeek Harness</title>', '<title>DSH · 远程</title>'))
+    }
     // Files of the app are compressed once and kept: they are the bulk of what a phone first downloads.
     const packed = new Map<string, Buffer>()
     const send = (req: IncomingMessage | undefined, res: ServerResponse, headers: Record<string, string>, key: string, data: Buffer): void => {
@@ -157,7 +166,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
       const active = new Set(gateway?.onlineIds() ?? [])
       return {
         enabled, busy, mode: preferences.mode, activeMode, autoStart: preferences.autoStart, proxyConfigured: !!preferences.proxy, proxyMode: preferences.proxyMode, manualProxy: local ? preferences.proxy : undefined,
-        systemProxy: preferences.proxyMode === 'system' && preferences.mode === 'public' ? await systemProxy() : undefined, accent: preferences.accent,
+        systemProxy: preferences.proxyMode === 'system' && preferences.mode === 'public' ? await systemProxy() : undefined, accent: preferences.accent, ui: preferences.ui,
         route: preferences.route, activeRoute: enabled && activeMode === 'public' && tunnel?.route ? ROUTES[tunnel.route].name : undefined, routeNote: enabled && activeMode === 'public' ? tunnel?.note : undefined,
         phase: enabled ? activeMode === 'public' ? tunnel?.phase ?? 'starting' : 'ready' : error ? 'error' : 'off',
         error: error ?? tunnel?.error, warning: enabled && activeMode === 'public' ? tunnel?.warning : undefined, gatewayPort: gateway?.port ?? 0, local,
@@ -251,6 +260,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
         case 'preferences': {
           if (busy && Object.keys(input).some(key => key !== 'action' && key !== 'accent')) throw new Error('请等待当前连接操作完成。')
           const next = { ...preferences }
+          if (input.ui !== undefined) { if (input.ui !== 'custom' && input.ui !== 'native') throw new Error('界面选项不正确。'); next.ui = input.ui }
           if (typeof input.autoStart === 'boolean') next.autoStart = input.autoStart
           if (input.mode !== undefined) { if (!['public', 'lan', 'fixed'].includes(String(input.mode))) throw new Error('连接模式不正确。'); next.mode = input.mode as Mode }
           if (input.route !== undefined) { if (!isRoute(input.route)) throw new Error('线路不正确。'); next.route = input.route }

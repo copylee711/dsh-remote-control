@@ -24,7 +24,7 @@ async function fixture() {
   await new Promise<void>(resolve => upstream.listen(0, '127.0.0.1', resolve))
   cleanup.push(async () => { for (const client of wss.clients) client.terminate(); wss.close(); upstream.closeAllConnections(); await new Promise<void>(resolve => upstream.close(() => resolve())) })
   const port = (upstream.address() as { port: number }).port
-  gateway = new Gateway({ pairing, upstreamPort: port, upstreamCookie: () => 'host-private=secret', manage: async (input, local) => { if (input.action === 'approve' && !local) throw new Error('本机确认'); return { local } }, index: async () => '<html><head></head><body>official shell</body></html>' })
+  gateway = new Gateway({ pairing, upstreamPort: port, upstreamCookie: () => 'host-private=secret', manage: async (input, local) => { if (input.action === 'approve' && !local) throw new Error('本机确认'); return { local } }, index: async ui => `<html><head></head><body>official shell; ui=${ui ?? 'default'}</body></html>` })
   await gateway.listen('127.0.0.1'); cleanup.push(() => gateway.close())
   const base = `http://127.0.0.1:${gateway.port}`
   const claim = pairing.request(pairing.issue().token, 'Android'); pairing.approve(claim.id)
@@ -54,6 +54,16 @@ describe('gateway admission and transport', () => {
   it('serves a gated official shell with boot hooks before scripts', async () => {
     const f = await fixture(), response = await fetch(f.base, { headers: { cookie: f.cookie } }), html = await response.text()
     expect(html).toContain('__DSH_TRANSPORT__'); expect(html).toContain('official shell'); expect(html).not.toContain(f.credential)
+  })
+  it('selects native/custom UI only after authorization and ignores unknown UI values', async () => {
+    const f = await fixture()
+    expect((await fetch(f.base + '/?ui=native')).status).toBe(403)
+    for (const [query, selected] of [['native', 'native'], ['custom', 'custom'], ['evil', 'default']]) {
+      const response = await fetch(`${f.base}/?ui=${query}`, { headers: { cookie: f.cookie } })
+      expect(response.status).toBe(200)
+      expect(await response.text()).toContain(`ui=${selected}`)
+    }
+    expect(f.calls()).toBe(0)
   })
   it('refuses remote approvals including encoded management paths', async () => {
     const f = await fixture()

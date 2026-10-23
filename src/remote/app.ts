@@ -7,9 +7,14 @@ import { Picker } from './picker.js'
 import { command } from '../client/index.js'
 import { ACCENTS, ACCENT_IDS, isAccent, type Accent } from '../accent.js'
 import { DialogViewport, ask, confirmAction } from './dialog.js'
+import { callRemote, CapabilityNotice, missingCapabilities } from './host.js'
 const h = React.createElement
 
 export function App({ ctx }: { ctx: Host }): React.ReactElement {
+  const missing = missingCapabilities(ctx, ['sessions.list.getSnapshot', 'sessions.list.subscribe', 'workspaces.list.getSnapshot', 'workspaces.list.subscribe'])
+  return missing.length ? h(CapabilityNotice, { missing }) : h(ReadyApp, { ctx })
+}
+function ReadyApp({ ctx }: { ctx: Host }): React.ReactElement {
   const sessions = useStore(ctx.sessions.list), workspaces = useStore(ctx.workspaces.list)
   const [sessionId, setSessionId] = React.useState<string>(), [workspaceId, setWorkspaceId] = React.useState('')
   const [page, setPage] = React.useState('chat'), [drawer, setDrawer] = React.useState(false), [query, setQuery] = React.useState('')
@@ -119,6 +124,7 @@ export function App({ ctx }: { ctx: Host }): React.ReactElement {
   // Theme and accent colour, shown at the top of the settings page.
   const appearance = h('section', { className: 'rc-card rc-appearance' },
     h('h3', null, '外观'),
+    h('a', { className: 'rc-pill', href: '/?ui=native' }, '打开原生界面'),
     h('div', { className: 'rc-sheet-row' }, '主题',
       h('div', { className: 'rc-segment', role: 'group', 'aria-label': '界面主题' },
         ...([['system', '跟随系统'], ['light', '浅色'], ['dark', '深色']] as const).map(([id, name]) =>
@@ -175,7 +181,7 @@ export function App({ ctx }: { ctx: Host }): React.ReactElement {
 
   const sessionActions = h('div', { className: 'rc-scroll' }, h('div', { className: 'rc-content' },
     h('section', { className: 'rc-list' },
-      h('button', { className: 'rc-menu-row', onClick: async () => { const next = await ask('会话名称', selected?.displayTitle || ''); if (next?.trim()) void action.run(() => ctx.remote.session.rename({ sessionId, title: next.trim() }), '会话已重命名') } }, '重命名'),
+      h('button', { className: 'rc-menu-row', onClick: async () => { const next = await ask('会话名称', selected?.displayTitle || ''); if (next?.trim()) void action.run(() => callRemote(ctx, 'session', 'rename', { sessionId, title: next.trim() }), '会话已重命名') } }, '重命名'),
       h('button', { className: 'rc-menu-row', onClick: () => { void action.run(() => selectedArchived ? ctx.workspaces.unarchiveSession(sessionId) : ctx.workspaces.archiveSession(sessionId), selectedArchived ? '已恢复' : '已归档') } }, selectedArchived ? '恢复会话' : '归档会话'),
       h('button', { className: 'rc-menu-row', onClick: () => { void action.run(async () => { const id = await ctx.sessions.fork({ sessionId }); select(id) }, '已创建分支会话') } }, '创建分支')),
     action.notice ? h('p', { className: 'rc-notice', role: 'status' }, action.notice) : null))
@@ -183,7 +189,7 @@ export function App({ ctx }: { ctx: Host }): React.ReactElement {
   const sessionMenu = h('dialog', { ref: menuDialog, className: 'rc-picker-sheet', 'aria-label': '会话操作', onCancel: () => setMenuFor(undefined), onClick: (event: React.MouseEvent) => { if (event.target === event.currentTarget) setMenuFor(undefined) } },
     menuFor ? h('div', { className: 'rc-picker-body' },
       h('div', { className: 'rc-picker-title' }, menuTitle),
-      h('button', { className: 'rc-picker-option', onClick: menuAct(async id => { const next = await ask('会话名称', sessions.byId?.[id]?.displayTitle || ''); if (next?.trim()) void action.run(() => ctx.remote.session.rename({ sessionId: id, title: next.trim() }), '') }) }, '重命名'),
+      h('button', { className: 'rc-picker-option', onClick: menuAct(async id => { const next = await ask('会话名称', sessions.byId?.[id]?.displayTitle || ''); if (next?.trim()) void action.run(() => callRemote(ctx, 'session', 'rename', { sessionId: id, title: next.trim() }), '') }) }, '重命名'),
       h('button', { className: 'rc-picker-option', onClick: menuAct(id => { void action.run(() => menuArchived ? ctx.workspaces.unarchiveSession(id) : ctx.workspaces.archiveSession(id), '') }) }, menuArchived ? '恢复到会话列表' : '归档'),
       h('button', { className: 'rc-picker-option', onClick: menuAct(id => { void action.run(async () => { const child = await ctx.sessions.fork({ sessionId: id }); select(child) }, '') }) }, '创建分支'),
       h('p', { className: 'rc-muted rc-menu-note' }, '宿主没有提供删除会话的接口；不想再看到的会话可以归档。')) : null)
