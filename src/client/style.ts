@@ -89,10 +89,10 @@ export const CSS = `
 .dsrc-rename{height:26px;width:220px;max-width:100%;border:1px solid var(--rc-accent);border-radius:6px;background:transparent;padding:0 8px;font-weight:600}
 
 .dsrc-entry{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:0;color:inherit;background:transparent;border-radius:8px;padding:8px;min-width:36px;min-height:36px;font:inherit;cursor:pointer}
-.dsrc-entry{position:relative}
-/* In the wide sidebar the entry sits at the right end of the account row, not on a row of its own. */
-[class*=footArea]:has(.dsrc-entry-corner){position:relative}
-.dsrc-entry.dsrc-entry-corner{position:absolute;right:10px;bottom:10px;z-index:1}
+/* Both controls consume real width in the account row instead of sharing corner coordinates. */
+.dsrc-entry-anchor{display:contents}
+.dsrc-inline-action{display:inline-flex;align-items:center;flex:none}
+.dsrc-entry{position:relative;flex:none}
 .dsrc-entry:hover{background:#77736c15}
 .dsrc-entry-dot{position:absolute;top:6px;right:6px;width:8px;height:8px;border-radius:50%;background:#D97757;box-shadow:0 0 0 2px var(--dsw-alias-background-primary,#fff)}
 .dsrc-dialog.dsrc-prompt{width:min(400px,calc(100vw - 32px))}

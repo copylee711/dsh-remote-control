@@ -1,9 +1,11 @@
 import * as React from 'react'
+import { createPortal } from 'react-dom'
 import { CSS } from './style.js'
 import type { Accent } from '../accent.js'
 import { ACCENTS, ACCENT_IDS, installAccent, useAccent } from './shared-accent.js'
 import { chooseAccent, syncAccent } from './accent-sync.js'
 import { registerNavIcon } from './nav-icon.js'
+import { mountInlineSidebarAction } from './sidebar-action.js'
 const h = React.createElement
 const ROUTE = '/api/dsh-remote-control/manage'
 interface Status {
@@ -208,6 +210,12 @@ function PairingPrompt({ waiting, onDone }: { waiting: Waiting; onDone: () => vo
         h('button', { type: 'button', className: 'dsrc-button dsrc-primary', disabled: working, autoFocus: true, onClick: () => { void answer('approve') } }, '允许连接'))) : null)
 }
 function SidebarEntry({ wide }: { wide?: boolean }): React.ReactElement {
+  const anchor = React.useRef<HTMLSpanElement>(null)
+  const [inlineTarget, setInlineTarget] = React.useState<HTMLElement | null>(null)
+  React.useLayoutEffect(() => {
+    setInlineTarget(null)
+    if (wide && anchor.current) return mountInlineSidebarAction(anchor.current, setInlineTarget)
+  }, [wide])
   const [open, setOpen] = React.useState(false), dialog = React.useRef<HTMLDialogElement>(null)
   const [waiting, setWaiting] = React.useState<Waiting>({ enabled: false, requests: [] })
   React.useEffect(() => { if (open) dialog.current?.showModal(); else dialog.current?.close() }, [open])
@@ -220,8 +228,9 @@ function SidebarEntry({ wide }: { wide?: boolean }): React.ReactElement {
   }, [])
   React.useEffect(() => { void check(); const timer = setInterval(() => { void check() }, 2500); return () => clearInterval(timer) }, [check])
   const pending = waiting.requests.length > 0
+  const button = h('button', { type: 'button', className: 'dsrc-entry', title: pending ? '远程控制 · 有配对请求' : '远程控制', 'aria-label': '远程控制', onClick: () => setOpen(true) }, icon(), pending ? h('span', { className: 'dsrc-entry-dot' }) : null)
   return h(React.Fragment, null,
-    h('button', { type: 'button', className: wide ? 'dsrc-entry dsrc-entry-corner' : 'dsrc-entry', title: pending ? '远程控制 · 有配对请求' : '远程控制', 'aria-label': '远程控制', onClick: () => setOpen(true) }, icon(), pending ? h('span', { className: 'dsrc-entry-dot' }) : null),
+    h('span', { className: 'dsrc-entry-anchor', ref: anchor }, inlineTarget ? createPortal(button, inlineTarget) : button),
     h('dialog', { className: 'dsrc-dialog', ref: dialog, onCancel: () => setOpen(false), onClick: (event: React.MouseEvent<HTMLDialogElement>) => { if (event.target === event.currentTarget) { const r = event.currentTarget.getBoundingClientRect(); if (event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom) setOpen(false) } } },
       h('button', { type: 'button', className: 'dsrc-close', 'aria-label': '关闭远程控制面板', onClick: () => setOpen(false) }, '×'), open ? h(RemoteControlPanel) : null),
     h(PairingPrompt, { waiting, onDone: () => { void check() } }))

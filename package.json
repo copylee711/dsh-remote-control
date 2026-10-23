@@ -1,6 +1,6 @@
 {
   "name": "@copylee/dsh-remote-control",
-  "version": "0.2.8",
+  "version": "0.2.9",
   "description": "DSH 扫码远程控制：独立移动界面、本机确认配对、untun 免费公网穿透与局域网直连",
   "type": "module",
   "license": "MIT",
@@ -73,7 +73,9 @@
     "qa:host": "node scripts/launch-qa.mjs",
     "qa:desktop": "node scripts/launch-desktop-qa.mjs",
     "qa:browser": "node scripts/remote-qa.mjs",
-    "qa:issue-1": "node scripts/issue-1-qa.mjs"
+    "qa:issue-1": "node scripts/issue-1-qa.mjs",
+    "qa:sidebar": "node scripts/sidebar-footer-qa.mjs",
+    "qa:sidebar-host": "node scripts/sidebar-entry-host-qa.mjs"
   },
   "dependencies": {
     "@deepseek-ai/dsh-web-frontend": "0.2.1-rc.2",
