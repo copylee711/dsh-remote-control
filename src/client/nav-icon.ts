@@ -13,7 +13,9 @@ const MARKER = 'data-dsrc-settings-nav'
 const ICON_SVG = "%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect width='14' height='20' x='5' y='2' rx='2' ry='2'/%3E%3Cpath d='M12 18h.01'/%3E%3C/svg%3E"
 
 export const navIconCss = `
-[${MARKER}] > svg:first-child { display: none; }
+/* Older shells render the SVG directly; newer shells wrap it in a decorative span. */
+[${MARKER}] > svg:first-child,
+[${MARKER}] > span[aria-hidden="true"]:first-child { display: none; }
 [${MARKER}]::before {
   content: '';
   flex: none;
