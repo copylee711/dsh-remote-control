@@ -26,6 +26,8 @@ export interface GatewayOptions {
   addresses?: () => string[]
   /** The accent colour the user chose, for the pages the gateway serves itself. */
   accent?: () => Accent
+  /** Told about a request that failed with an unexpected error; the phone only sees a generic 500. */
+  onError?: (error: unknown, path: string) => void
 }
 export function safePath(path: string): boolean {
   if (!path.startsWith('/') || path.startsWith('//') || /[\x00-\x1f\\]/.test(path)) return false
@@ -64,7 +66,7 @@ export class Gateway {
     if (this.server) throw new Error('远程网关已启动。')
     this.ws ??= await import('ws')
     this.wss ??= new this.ws.WebSocketServer({ noServer: true, maxPayload: 32 * 1024 * 1024, perMessageDeflate: false })
-    const server = this.server = createServer((req, res) => { void this.handle(req, res).catch(() => { if (!res.headersSent) json(res, 500, { error: '请求处理失败，请在本机查看状态。' }); else res.destroy() }) })
+    const server = this.server = createServer((req, res) => { void this.handle(req, res).catch((error: unknown) => { try { this.options.onError?.(error, (req.url ?? '').split('?')[0]!) } catch {} if (!res.headersSent) json(res, 500, { error: '请求处理失败，请在本机查看状态。' }); else res.destroy() }) })
     server.on('connection', socket => { this.sockets.add(socket); socket.on('error', () => {}); socket.once('close', () => this.sockets.delete(socket)) })
     server.on('upgrade', (req, socket, head) => { socket.on('error', () => {}); void this.upgrade(req, socket, head).catch(() => socket.destroy()) })
     await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(port, host, () => { server.off('error', reject); resolve() }) })

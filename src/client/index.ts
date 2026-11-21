@@ -128,7 +128,7 @@ export function RemoteControlPanel(): React.ReactElement {
             h('button', { key: id, type: 'button', 'aria-pressed': (state?.ui ?? 'custom') === id, disabled, onClick: () => { void act('preferences', { ui: id }) } }, title))),
         h('p', null, '下次打开或刷新手机页面时生效，无需重新配对。自定义界面异常时，也可直接打开原生界面。'),
         state?.local ? null : h('a', { href: '/?ui=native' }, '打开原生界面')),
-      h('p', { className: 'dsrc-note' }, '当前按 DSH 0.2.1-rc.2 接口适配。若部分功能提示服务缺失，请检查相关插件是否启用，或改用原生界面。'),
+      h('p', { className: 'dsrc-note' }, '当前按 DSH 0.2.2-rc.5 接口适配。若部分功能提示服务缺失，请检查相关插件是否启用，或改用原生界面。'),
       h('div', { className: 'dsrc-ways', role: 'radiogroup', 'aria-label': '连接方式' },
         ...WAYS.map(way => h('button', { key: way.mode, type: 'button', role: 'radio', className: 'dsrc-way', 'aria-checked': shown === way.mode, disabled, onClick: () => choose(way.mode) },
           h('span', { className: 'dsrc-way-mark' }),

@@ -20,7 +20,10 @@ const remote: UserConfig = {
   entry: { remote: 'lib/types/remote/bootstrap.js' }, outDir: 'lib', format: 'esm', platform: 'browser', target: 'es2022', clean: false, dts: false,
   deps: { onlyBundle: false, alwaysBundle: [/./] },
   define: { 'process.env.NODE_ENV': JSON.stringify('production'), 'process.env.CORDIS_SHARED': 'undefined', 'process.versions.node': JSON.stringify('0.0.0'), 'process.execArgv': '[]' },
-  alias: { 'node:module': fileURLToPath(new URL('./src/remote/node-module.ts', import.meta.url)) },
+  alias: {
+    'node:module': fileURLToPath(new URL('./src/remote/node-module.ts', import.meta.url)),
+    ...Object.fromEntries(['node:fs', 'node:fs/promises', 'node:path', 'node:url'].map(id => [id, fileURLToPath(new URL('./src/remote/node-unavailable.ts', import.meta.url))])),
+  },
   plugins: [{
     name: 'bundled-runtime-licenses',
     generateBundle(_options, bundle) {

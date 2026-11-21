@@ -5,7 +5,7 @@ import type {} from '@deepseek-ai/dsh-client-connection'
 import { createRequire } from 'node:module'
 import { homedir, networkInterfaces } from 'node:os'
 import { dirname, extname, join, resolve, sep } from 'node:path'
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs'
 import { readFile, stat } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
@@ -107,7 +107,16 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     if (!upstreamPort) throw new Error('DSH WebServer 尚未就绪。')
     let credential = hostCookie(ready.connection, upstreamPort)
     const require = createRequire(import.meta.url)
-    const distRoot = join(dirname(require.resolve('@deepseek-ai/dsh-web-frontend/package.json')), 'dist')
+    // Prefer the running host's own web frontend so the native UI always matches the
+    // host version; fall back to the copy this package depends on.
+    const frontendPackage = (() => {
+      try {
+        return createRequire(realpathSync(process.argv[1]!)).resolve('@deepseek-ai/dsh-web-frontend/package.json')
+      } catch {
+        return require.resolve('@deepseek-ai/dsh-web-frontend/package.json')
+      }
+    })()
+    const distRoot = join(dirname(frontendPackage), 'dist')
     const renderIndex = async (ui = preferences.ui) => {
       let html = await readFile(join(distRoot, 'index.html'), 'utf8')
       if (ui === 'custom') {
@@ -116,7 +125,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
       } else {
         html = html.replace('</body>', '<a href="/?ui=custom" style="position:fixed;right:12px;bottom:8px;z-index:10000;padding:6px 12px;background:Canvas;color:CanvasText;border:1px solid currentColor;border-radius:8px;font:13px system-ui">返回自定义界面</a></body>')
       }
-      return ready.webServer.renderIndex(html.replace('<title>DeepSeek Harness</title>', '<title>DSH · 远程</title>'))
+      return ready.webServer.renderIndex(html.replace('<title>DeepSeek Harness</title>', '<title>DSH · 远程</title>'), ready.connection.browserPeer)
     }
     // Files of the app are compressed once and kept: they are the bulk of what a phone first downloads.
     const packed = new Map<string, Buffer>()
@@ -197,7 +206,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
         const stopping = stop(); ticket = generation
         await stopping; if (disposed || ticket !== generation) return
         credential = hostCookie(ready.connection, upstreamPort)
-        const create = () => new Gateway({ pairing, upstreamPort, upstreamCookie: () => credential, manage, index: renderIndex, asset, addresses: mode === 'lan' ? lanAddresses : undefined, accent: () => preferences.accent })
+        const create = () => new Gateway({ pairing, upstreamPort, upstreamCookie: () => credential, manage, index: renderIndex, asset, addresses: mode === 'lan' ? lanAddresses : undefined, accent: () => preferences.accent, onError: (error, path) => { ctx.logger.warn('远程请求 %s 处理失败：%s', path, error instanceof Error ? (error.stack ?? error.message) : String(error)) } })
         const host = mode === 'lan' ? '0.0.0.0' : '127.0.0.1'
         let next = gateway = create()
         // The port of last time first: a phone's bookmark or open tab then still points at this computer.

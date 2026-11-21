@@ -38,7 +38,7 @@ dsh plugin --profile web add @copylee/dsh-remote-control@latest
 
 桌面应用和 `dsh web` 使用各自的 profile，需要分别安装。
 
-要求：自插件 0.2.8 起，DSH 最低版本为 0.2.1-rc.2，Node.js 22.19+ 或 24+。“任意网络”需要电脑能访问 Cloudflare；手机不需要代理。
+要求：自插件 0.2.11 起，DSH 最低版本为 0.2.2-rc.1（0.2.1 系列请用 0.2.10），Node.js 22.19+ 或 24+。“任意网络”需要电脑能访问 Cloudflare；手机不需要代理。
 
 手机默认界面可在「设置 → 远程控制 → 手机连接后使用的界面」选择，刷新手机页面后生效，无需重新配对。自定义界面的设置页及错误提示提供「打开原生界面」。也可在已配对的网关地址后加 `/?ui=native` 临时打开原生界面，或用 `/?ui=custom` 返回自定义界面；临时切换不修改默认选项，两种界面使用相同的配对和撤销权限。
 
@@ -104,7 +104,7 @@ DSH Host 的 Web 服务  /api/remote.mux（WebSocket）、/plugins/*、文件接
 
 - 手机界面是随插件发布的独立前端：它启动宿主的客户端服务来读写会话和设置，界面本身由插件渲染。
 - Cloudflare Quick Tunnel 不支持 SSE，远程引导脚本把宿主的 `/plugins/events` 事件流改由 WebSocket 传输，保留事件顺序、`Last-Event-ID` 和重连。
-- 第三方插件的设置页通过兼容容器显示，涉及 DSH 内部渲染接口；宿主升级改变该接口时，对应页面会提示不可用，其余功能不受影响。0.2.8 的客户端运行时及内置原生前端已对齐 0.2.1-rc.2。
+- 第三方插件的设置页通过兼容容器显示，涉及 DSH 内部渲染接口；宿主升级改变该接口时，对应页面会提示不可用，其余功能不受影响。0.2.11 的客户端运行时已对齐 0.2.2-rc.5；原生界面优先使用宿主自带的前端，版本始终与宿主一致，找不到时才用插件内置的那份。
 
 更多细节见 [功能对应清单](docs/features.md)、[验证记录](docs/verification.md)、[调研记录](docs/research.md) 和 [UI 规格](docs/ui-spec.md)。
 
@@ -124,7 +124,11 @@ node scripts/check-package.mjs   # 检查打包内容
 
 ## 致谢
 
-实现时参考了 [dsh-remote-web-ui](https://github.com/zhu1090093659/dsh-web/tree/main/packages/dsh-remote-web-ui)、[DSH Remote](https://github.com/mrRisega/dsh-remote/tree/main/packages/dsh-remote-web) 和 [untun](https://github.com/unjs/untun)。本项目为独立实现，不使用这些项目作者的中继服务。
+实现时参考了 [dsh-remote-web-ui](https://github.com/zhu1090093659/dsh-web/tree/main/packages/dsh-remote-web-ui)、[DSH Remote](https://github.com/mrRisega/dsh-remote/tree/main/packages/dsh-remote-web) 和 [untun](https://github.com/unjs/untun)。本项目为独立实现，不使用这些项目作者的中继服务。DSH 0.2.2 的兼容修复基于 andre6226 在 [#3](https://github.com/copylee711/dsh-remote-control/issues/3) 中提供的补丁。
+
+## 衍生版本
+
+- [dsh-remote-connect](https://github.com/winlin926/dsh-remote-connect)：去掉了插件自带的手机界面，直接使用 DSH 0.2.2 起自带的移动布局；“任意网络”改为自己的固定 HTTPS 域名加转发通道（SakuraFrp / frpc / Nginx / Caddy 等），内置 ACME 证书申请与续期。由其作者维护。
 
 ## 许可证
 
